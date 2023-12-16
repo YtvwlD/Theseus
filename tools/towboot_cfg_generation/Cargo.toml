@@ -1,0 +1,9 @@
+[package]
+name = "towboot_cfg_generation"
+version = "0.1.0"
+edition = "2021"
+authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de"]
+description = "Parses the directory of built object files and generates a configuration file for towboot"
+
+[dependencies]
+getopts = "0.2"

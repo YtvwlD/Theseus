@@ -106,8 +106,9 @@ else ifeq ($(bootloader),limine)
 	else
 $(error Error: missing '$(LIMINE_DIR)' directory! Please follow the limine instructions in the README)
 	endif
+else ifeq ($(bootloader),towboot)
 else
-$(error Error: unsupported option "bootloader=$(bootloader)". Options are 'grub' or 'limine')
+$(error Error: unsupported option "bootloader=$(bootloader)". Options are 'grub', 'limine' or 'towboot')
 endif
 
 
@@ -409,6 +410,13 @@ limine:
 		$(ISOFILES)/ -o $(iso)
 	@$(MAKE) -C $(LIMINE_DIR)
 	@$(LIMINE_DIR)/limine-deploy $(iso)
+
+
+### This target uses towboot to build a bootable ISO.
+### This target should be invoked when all of contents of `ISOFILES` are ready to be packaged into an ISO.
+towboot:
+	@RUSTFLAGS="" cargo run --release --manifest-path $(ROOT_DIR)/tools/towboot_cfg_generation/Cargo.toml -- $(ISOFILES)/modules/ -o $(ISOFILES)/towboot.toml
+	cd ~/dev/rust/towboot; cargo xtask build --release --target $(iso) -- -config $(ROOT_DIR)/tools/towboot_cfg_generation/Cargo.toml
 
 
 ## This downloads the OVMF EFI firmware, needed by QEMU to boot an EFI app.

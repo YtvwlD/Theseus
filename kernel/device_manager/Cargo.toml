@@ -27,6 +27,7 @@ mouse = { path = "../mouse" }
 storage_manager = { path = "../storage_manager" }
 ixgbe = { path = "../ixgbe" }
 io = { path = "../io" }
+mlx3 = { path = "../mlx3" }
 mlx5 = { path = "../mlx5" }
 iommu = { path = "../iommu" }
 net = { path = "../net" }

@@ -914,6 +914,7 @@ dependencies = [
  "log",
  "logger",
  "memory",
+ "mlx3",
  "mlx5",
  "mouse",
  "mpmc",
@@ -2111,6 +2112,14 @@ dependencies = [
  "getopts",
  "task",
  "vfs_node",
+]
+
+[[package]]
+name = "mlx3"
+version = "0.1.0"
+dependencies = [
+ "pci",
+ "sync_irq",
 ]
 
 [[package]]

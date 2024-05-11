@@ -123,7 +123,7 @@ pub fn init(
         // Look for networking controllers, specifically ethernet cards
         // No NIC support on aarch64 at the moment
         #[cfg(target_arch = "x86_64")]
-        if dev.class == 0x02 && dev.subclass == 0x00 {
+        if dev.class == 0x02 {
             if dev.vendor_id == e1000::INTEL_VEND && dev.device_id == e1000::E1000_DEV {
                 info!("e1000 PCI device found at: {:?}", dev.location);
                 let nic = e1000::E1000Nic::init(dev)?;
@@ -163,6 +163,11 @@ pub fn init(
                 const MAX_MTU:  u16 = 9000;
 
                 mlx5::ConnectX5Nic::init(dev, TX_DESCS, RX_DESCS, MAX_MTU)?;
+                continue;
+            }
+            if dev.vendor_id == mlx3::MLX_VEND && dev.device_id == mlx3::CONNECTX3_DEV {
+                info!("mlx3 PCI device found at: {:?}", dev.location);
+                mlx3::ConnectX3Nic::init(dev)?;
                 continue;
             }
 

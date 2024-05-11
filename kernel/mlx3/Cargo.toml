@@ -1,0 +1,13 @@
+[package]
+authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
+name = "mlx3"
+description = "Driver for the Mellanox ConnectX-3 NIC"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pci = { path = "../pci" }
+sync_irq = { path = "../../libs/sync_irq" }
+
+[lib]
+crate-type = ["rlib"]

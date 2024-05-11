@@ -5,10 +5,14 @@
 
 #![no_std]
 
+mod device;
+
 #[macro_use] extern crate log;
 
 use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
+
+use crate::device::ResetRegisters;
 
 /// Vendor ID for Mellanox
 pub const MLX_VEND: u16 = 0x15b3;
@@ -33,9 +37,17 @@ impl ConnectX3Nic {
         mlx3_pci_dev.pci_set_command_bus_master_bit();
 
         // map the Global Device Configuration registers
-        let config_regs = mlx3_pci_dev.pci_map_bar_mem(0)?;
+        let mut config_regs = mlx3_pci_dev.pci_map_bar_mem(0)?;
         trace!("mlx3 configuration registers: {:?}", config_regs);
         // TODO: there's also the User Access Region in BAR 2
+
+        ResetRegisters::reset(mlx3_pci_dev, &mut config_regs)?;
+
+        // TODO: This shouldn't be necessary.
+        // We should be restoring the config space in reset(),
+        // but even now these bits are always set.
+        mlx3_pci_dev.pci_set_command_memory_space_bit();
+        mlx3_pci_dev.pci_set_command_bus_master_bit();
 
         todo!()
     }

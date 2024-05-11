@@ -512,6 +512,11 @@ impl PciLocation {
         self.pci_read_raw(register) as _
     }
 
+    /// Read the vendor ID (again).
+    pub fn pci_read_vendor_id(&self) -> u16 {
+        self.pci_read_16(PCI_VENDOR_ID)
+    }
+
     /// Writes (part of) the given `value` to the given `register` in the PCI Configuration Space.
     ///
     /// If the width of the given `register` is less than 4 bytes, this function will first

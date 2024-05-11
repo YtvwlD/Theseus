@@ -596,6 +596,19 @@ impl PciLocation {
         self.pci_write_raw(register, value as _)
     }
 
+    /// Sets the PCI device's bit 2 in the command portion, which is apparently needed to activate memory access (??)
+    pub fn pci_set_command_memory_space_bit(&self) {
+        let value = self.pci_read_16(PCI_COMMAND);
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value: {:#x}", self, value);
+
+        self.pci_write_16(PCI_COMMAND, value | (1 << 1));
+
+        trace!("pci_set_command_memory_space_bit: PciDevice: {}, read value AFTER WRITE CMD: {:#x}", 
+            self,
+            self.pci_read_16(PCI_COMMAND),
+        );
+    }
+
     /// Sets the PCI device's bit 3 in the command portion, which is apparently needed to activate DMA (??)
     pub fn pci_set_command_bus_master_bit(&self) {
         let value = self.pci_read_16(PCI_COMMAND);

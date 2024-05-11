@@ -5,6 +5,8 @@
 
 #![no_std]
 
+#[macro_use] extern crate log;
+
 use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
 
@@ -25,6 +27,16 @@ impl ConnectX3Nic {
     /// # Arguments
     /// * `mlx3_pci_dev`: Contains the pci device information.
     pub fn init(mlx3_pci_dev: &PciDevice) -> Result<&'static IrqSafeMutex<ConnectX3Nic>, &'static str> {
+        // set the memory space bit for this PciDevice
+        mlx3_pci_dev.pci_set_command_memory_space_bit();
+        // set the bus mastering bit for this PciDevice, which allows it to use DMA
+        mlx3_pci_dev.pci_set_command_bus_master_bit();
+
+        // map the Global Device Configuration registers
+        let config_regs = mlx3_pci_dev.pci_map_bar_mem(0)?;
+        trace!("mlx3 configuration registers: {:?}", config_regs);
+        // TODO: there's also the User Access Region in BAR 2
+
         todo!()
     }
 }

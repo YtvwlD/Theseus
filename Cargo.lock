@@ -2118,6 +2118,7 @@ dependencies = [
 name = "mlx3"
 version = "0.1.0"
 dependencies = [
+ "log",
  "pci",
  "sync_irq",
 ]

@@ -9,6 +9,7 @@ edition = "2021"
 byteorder = { version = "1.4.3", default-features = false }
 log = "0.4.4"
 memory = { path = "../memory" }
+num_enum_derive = "0.5"
 pci = { path = "../pci" }
 sleep = { path = "../sleep" }
 sync_irq = { path = "../../libs/sync_irq" }

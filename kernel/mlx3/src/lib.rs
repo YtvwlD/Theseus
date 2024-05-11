@@ -5,7 +5,9 @@
 
 #![no_std]
 
+mod cmd;
 mod device;
+mod fw;
 
 #[macro_use] extern crate log;
 
@@ -13,6 +15,7 @@ use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
 
 use crate::device::{Ownership, ResetRegisters};
+use crate::fw::Firmware;
 
 /// Vendor ID for Mellanox
 pub const MLX_VEND: u16 = 0x15b3;
@@ -50,6 +53,7 @@ impl ConnectX3Nic {
         mlx3_pci_dev.pci_set_command_bus_master_bit();
 
         Ownership::get(&config_regs)?;
+        Firmware::query(&mut config_regs)?;
 
         todo!()
     }

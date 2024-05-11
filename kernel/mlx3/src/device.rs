@@ -7,6 +7,7 @@ use volatile::{ReadOnly, WriteOnly};
 use zerocopy::{U32, FromBytes};
 
 const RESET_BASE: usize = 0xf0000;
+const OWNER_BASE: usize = 0x8069c;
 
 #[derive(FromBytes)]
 #[repr(C, packed)]
@@ -54,5 +55,22 @@ impl ResetRegisters {
             sleep(Duration::from_millis(1)).unwrap();
         }
         Err("Card failed to reset")
+    }
+}
+
+#[derive(FromBytes)]
+#[repr(transparent)]
+pub(super) struct Ownership {
+    value: ReadOnly<U32<BigEndian>>,
+}
+
+impl Ownership {
+    pub(super) fn get(config_regs: &MappedPages) -> Result<(), &'static str> {
+        let ownership: &Ownership = config_regs.as_type(OWNER_BASE)?;
+        if ownership.value.read().get() == 0 {
+            Ok(())
+        } else {
+            Err("We don't have card ownership")
+        }
     }
 }

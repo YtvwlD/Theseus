@@ -12,7 +12,7 @@ mod device;
 use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
 
-use crate::device::ResetRegisters;
+use crate::device::{Ownership, ResetRegisters};
 
 /// Vendor ID for Mellanox
 pub const MLX_VEND: u16 = 0x15b3;
@@ -48,6 +48,8 @@ impl ConnectX3Nic {
         // but even now these bits are always set.
         mlx3_pci_dev.pci_set_command_memory_space_bit();
         mlx3_pci_dev.pci_set_command_bus_master_bit();
+
+        Ownership::get(&config_regs)?;
 
         todo!()
     }

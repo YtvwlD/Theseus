@@ -108,6 +108,13 @@ pub(super) struct MappedFirmwareArea {
 }
 
 impl MappedFirmwareArea {
+    pub(super) fn run(&self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        cmd.execute_command(Opcode::RunFw, None, 0, None)?;
+        trace!("successfully run firmware");
+        Ok(())
+    }
+    
     /// Unmaps the area from the card. Further usage requires a software reset.
     pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
         trace!("unmapping firmware area...");

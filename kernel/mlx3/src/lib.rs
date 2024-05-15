@@ -55,7 +55,7 @@ impl ConnectX3Nic {
         Ownership::get(&config_regs)?;
         let firmware = Firmware::query(&mut config_regs)?;
         let firmware_area = firmware.map_area(&mut config_regs)?;
-        firmware_area.unmap(&mut config_regs)?;
+        firmware_area.run(&mut config_regs)?;
 
         todo!()
     }

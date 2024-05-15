@@ -53,7 +53,9 @@ impl ConnectX3Nic {
         mlx3_pci_dev.pci_set_command_bus_master_bit();
 
         Ownership::get(&config_regs)?;
-        Firmware::query(&mut config_regs)?;
+        let firmware = Firmware::query(&mut config_regs)?;
+        let firmware_area = firmware.map_area(&mut config_regs)?;
+        firmware_area.unmap(&mut config_regs)?;
 
         todo!()
     }

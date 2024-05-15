@@ -19,6 +19,7 @@ const POLL_TOKEN: u32 = 0xffff;
 #[derive(Debug, IntoPrimitive)]
 pub(super) enum Opcode {
     // initialization and general commands
+    UnmapFa = 0xffe,
     MapFa = 0xfff,
     RunFw = 0xff6,
     QueryDevCap = 0x03,
@@ -76,7 +77,8 @@ impl<'a> CommandMailBox<'a> {
     /// because the card has to work with them.
     pub(super) fn execute_command(
         &mut self, opcode: Opcode,
-        input: Option<PhysicalAddress>, output: Option<PhysicalAddress>,
+        input: Option<PhysicalAddress>, input_modifier: u32,
+        output: Option<PhysicalAddress>,
     ) -> Result<(), &'static str> {
         // TODO: timeout
 
@@ -85,9 +87,10 @@ impl<'a> CommandMailBox<'a> {
 
         // post the command
         trace!("executing command: {opcode:?}");
-        assert!(input.is_none());
-        self.hcr.in_param.write(0.into()); // TODO
-        self.hcr.in_mod.write(0.into()); // TODO
+        self.hcr.in_param.write(
+            input.map_or(0, |i| i.value() as u64).into()
+        );
+        self.hcr.in_mod.write(input_modifier.into());
         self.hcr.out_param.write(
             output.map_or(0, |o| o.value() as u64).into()
         );

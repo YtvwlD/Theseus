@@ -316,21 +316,21 @@ pub(super) struct Capabilities {
     // actually just u1
     ecn_qcn_ver: u8,
     _padding17: u32,
-    rdmarc_entry_sz: U16<BigEndian>,
-    qpc_entry_sz: U16<BigEndian>,
-    aux_entry_sz: U16<BigEndian>,
-    altc_entry_sz: U16<BigEndian>,
-    eqc_entry_sz: U16<BigEndian>,
-    cqc_entry_sz: U16<BigEndian>,
-    srq_entry_sz: U16<BigEndian>,
-    c_mpt_entry_sz: U16<BigEndian>,
-    mtt_entry_sz: U16<BigEndian>,
-    d_mpt_entry_sz: U16<BigEndian>,
+    pub(super) rdmarc_entry_sz: U16<BigEndian>,
+    pub(super) qpc_entry_sz: U16<BigEndian>,
+    pub(super) aux_entry_sz: U16<BigEndian>,
+    pub(super) altc_entry_sz: U16<BigEndian>,
+    pub(super) eqc_entry_sz: U16<BigEndian>,
+    pub(super) cqc_entry_sz: U16<BigEndian>,
+    pub(super) srq_entry_sz: U16<BigEndian>,
+    pub(super) c_mpt_entry_sz: U16<BigEndian>,
+    pub(super) mtt_entry_sz: U16<BigEndian>,
+    pub(super) d_mpt_entry_sz: U16<BigEndian>,
     bmme_flags: U16<BigEndian>,
     phv_en: U16<BigEndian>,
     rsvd_lkey: U32<BigEndian>,
     diag_flags: U32<BigEndian>,
-    max_icm_size: U64<BigEndian>,
+    pub(super) max_icm_sz: U64<BigEndian>,
     // actually just u24
     dmfs_high_rate_qpn_base: U32<BigEndian>,
     // actually just u24
@@ -386,7 +386,7 @@ impl core::fmt::Debug for Capabilities {
             .field("BlueFlame available", &self.bf)
             .field("BlueFlame reg size", &self.bf_reg_size())
             .field("BlueFlame regs/page", &self.bf_regs_per_page())
-            .field("Max ICM size (PB)", &(self.max_icm_size.get() >> 50))
+            .field("Max ICM size (PB)", &(self.max_icm_sz.get() >> 50))
             .field("Max QPs", &(1 << self.log_max_qp))
             .field("reserved QPs", &(1 << self.log2_rsvd_qps))
             .field("QPC entry size", &self.qpc_entry_sz)
@@ -421,4 +421,38 @@ impl core::fmt::Debug for Capabilities {
             // TODO: dump flags
             .finish()
     }
+}
+
+// TODO: this is just a placeholder for now
+#[derive(Default)]
+pub(super) struct InitHcaParameters {
+    pub(super) qpc_base: u64,
+    pub(super) rdmarc_base: u64,
+    pub(super) auxc_base: u64,
+    pub(super) altc_base: u64,
+    pub(super) srqc_base: u64,
+    pub(super) cqc_base: u64,
+    pub(super) eqc_base: u64,
+    pub(super) mc_base: u64,
+    pub(super) dmpt_base: u64,
+    pub(super) cmpt_base: u64,
+    pub(super) mtt_base: u64,
+    pub(super) num_cqs: usize,
+    pub(super) num_qps: usize,
+    pub(super) num_eqs: usize,
+    pub(super) num_mpts: usize,
+    pub(super) num_mgms: usize,
+    pub(super) num_amgms: usize,
+    pub(super) num_srqs: usize,
+    pub(super) num_mtts: usize,
+    pub(super) max_qp_dest_rdma: usize,
+    pub(super) log_mc_entry_sz: u16,
+    pub(super) log_mc_hash_sz: u16,
+    pub(super) log_num_qps: u8,
+    pub(super) log_num_srqs: u8,
+    pub(super) log_num_cqs: u8,
+    pub(super) log_num_eqs: u8,
+    pub(super) log_rd_per_qp: u8,
+    pub(super) log_mc_table_sz: u8,
+    pub(super) log_mpt_sz: u8,
 }

@@ -8,6 +8,8 @@
 mod cmd;
 mod device;
 mod fw;
+mod mcg;
+mod profile;
 
 #[macro_use] extern crate log;
 
@@ -16,6 +18,7 @@ use sync_irq::IrqSafeMutex;
 
 use crate::device::{Ownership, ResetRegisters};
 use crate::fw::Firmware;
+use crate::profile::make_profile;
 
 /// Vendor ID for Mellanox
 pub const MLX_VEND: u16 = 0x15b3;
@@ -56,7 +59,9 @@ impl ConnectX3Nic {
         let firmware = Firmware::query(&mut config_regs)?;
         let firmware_area = firmware.map_area(&mut config_regs)?;
         firmware_area.run(&mut config_regs)?;
-        firmware_area.query_capabilities(&mut config_regs)?;
+        let caps = firmware_area.query_capabilities(&mut config_regs)?;
+        // In the Nautilus driver, some of the port setup already happens here.
+        make_profile(&caps)?;
 
         todo!()
     }

@@ -12,6 +12,8 @@ memory = { path = "../memory" }
 num_enum_derive = "0.5"
 pci = { path = "../pci" }
 sleep = { path = "../sleep" }
+strum = { version = "0.26", default-features = false }
+strum_macros = "0.26"
 sync_irq = { path = "../../libs/sync_irq" }
 volatile = "0.2.7"
 zerocopy = "0.5.0"

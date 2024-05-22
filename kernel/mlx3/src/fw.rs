@@ -59,8 +59,7 @@ impl Firmware {
         let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
         let mut pointer = physical;
         for _ in 0..count {
-            vpm.physical_address_high.set((pointer.value() >> 32).try_into().unwrap());
-            vpm.physical_address_low.set((pointer.value() & 0xffffffff).try_into().unwrap());
+            vpm.physical_address.set(pointer.value().try_into().unwrap());
             cmd.execute_command(Opcode::MapFa, Some(vpm_physical), 1, None)?;
             pointer += 1 << align;
         }
@@ -91,12 +90,10 @@ impl core::fmt::Debug for Firmware {
 #[derive(Clone, FromBytes, Default)]
 #[repr(C, packed)]
 struct VirtualPhysicalMapping {
-    virtual_address_high: U32<BigEndian>,
-    // actually just 20 bits
-    virtual_address_low: U32<BigEndian>,
-    physical_address_high: U32<BigEndian>,
-    // actually just 20 bits and then log2size
-    physical_address_low: U32<BigEndian>,
+    // actually just 52 bits
+    virtual_address: U64<BigEndian>,
+    // actually just 52 bits and then log2size
+    physical_address: U64<BigEndian>,
 }
 
 /// A mapped firmware area.

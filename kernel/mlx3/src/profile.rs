@@ -56,16 +56,16 @@ pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u6
     // but that's how the C driver does it
     let mut profiles: [Resource; ResourceType::COUNT] = Default::default();
 
-    profiles[ResourceType::QP as usize].size = caps.qpc_entry_sz.get().into();
-    profiles[ResourceType::RDMARC as usize].size = caps.rdmarc_entry_sz.get().into();
-    profiles[ResourceType::ALTC as usize].size = caps.altc_entry_sz.get().into();
-    profiles[ResourceType::AUXC as usize].size = caps.aux_entry_sz.get().into();
-    profiles[ResourceType::SRQ as usize].size = caps.srq_entry_sz.get().into();
-    profiles[ResourceType::CQ as usize].size = caps.cqc_entry_sz.get().into();
-    profiles[ResourceType::EQ as usize].size = caps.eqc_entry_sz.get().into();
-    profiles[ResourceType::DMPT as usize].size = caps.d_mpt_entry_sz.get().into();
-    profiles[ResourceType::CMPT as usize].size = caps.c_mpt_entry_sz.get().into();
-    profiles[ResourceType::MTT as usize].size = caps.mtt_entry_sz.get().into();
+    profiles[ResourceType::QP as usize].size = caps.qpc_entry_sz().into();
+    profiles[ResourceType::RDMARC as usize].size = caps.rdmarc_entry_sz().into();
+    profiles[ResourceType::ALTC as usize].size = caps.altc_entry_sz().into();
+    profiles[ResourceType::AUXC as usize].size = caps.aux_entry_sz().into();
+    profiles[ResourceType::SRQ as usize].size = caps.srq_entry_sz().into();
+    profiles[ResourceType::CQ as usize].size = caps.cqc_entry_sz().into();
+    profiles[ResourceType::EQ as usize].size = caps.eqc_entry_sz().into();
+    profiles[ResourceType::DMPT as usize].size = caps.d_mpt_entry_sz().into();
+    profiles[ResourceType::CMPT as usize].size = caps.c_mpt_entry_sz().into();
+    profiles[ResourceType::MTT as usize].size = caps.mtt_entry_sz().into();
     profiles[ResourceType::MCG as usize].size = super::mcg::get_mgm_entry_size();
 
     profiles[ResourceType::QP as usize].num = DEFAULT_NUM_QP;
@@ -98,7 +98,7 @@ pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u6
     for (idx, profile) in profiles.iter_mut().enumerate() {
         profile.start = total_size;
         total_size += profile.size;
-        if total_size > caps.max_icm_sz.get() {
+        if total_size > caps.max_icm_sz() {
             return Err("total size > maximum ICM size");
         }
         if profile.size > 0 {
@@ -162,7 +162,7 @@ pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u6
             },
         }
     }
-    trace!("Max ICM size: {} GB", caps.max_icm_sz.get() >> 30);
+    trace!("Max ICM size: {} GB", caps.max_icm_sz() >> 30);
     trace!("ICM memory reserving {} GB", total_size >> 30);
     trace!("HCA Pages Required: {}", total_size >> 12);
     Ok((init_hca, total_size))

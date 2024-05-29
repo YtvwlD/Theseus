@@ -142,6 +142,8 @@ impl MappedFirmwareArea {
         trace!("unmapping firmware area...");
         let mut cmd = CommandMailBox::new(config_regs)?;
         cmd.execute_command(Opcode::UnmapFa, 0, 0, 0)?;
+        trace!("successfully unmapped firmware area");
+        core::mem::forget(self); // don't run the drop handler in this case
         Ok(())
     }
     

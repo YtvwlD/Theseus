@@ -13,6 +13,8 @@ mod profile;
 
 #[macro_use] extern crate log;
 
+use fw::MappedFirmwareArea;
+use memory::MappedPages;
 use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
 
@@ -27,7 +29,8 @@ pub const CONNECTX3_DEV: u16 = 0x1003;
 
 /// Struct representing a ConnectX-3 card
 pub struct ConnectX3Nic {
-
+    config_regs: MappedPages,
+    firmware_area: Option<MappedFirmwareArea>,
 }
 
 /// Functions that setup the struct.
@@ -58,12 +61,25 @@ impl ConnectX3Nic {
         Ownership::get(&config_regs)?;
         let firmware = Firmware::query(&mut config_regs)?;
         let firmware_area = firmware.map_area(&mut config_regs)?;
-        firmware_area.run(&mut config_regs)?;
-        let caps = firmware_area.query_capabilities(&mut config_regs)?;
+        let mut nic = Self { config_regs, firmware_area: Some(firmware_area) };
+        let firmware_area = nic.firmware_area.as_ref().unwrap();
+        let config_regs = &mut nic.config_regs;
+        firmware_area.run(config_regs)?;
+        let caps = firmware_area.query_capabilities(config_regs)?;
         // In the Nautilus driver, some of the port setup already happens here.
         let (init_hca_params, icm_size) = make_profile(&caps)?;
-        firmware_area.set_icm(&mut config_regs, icm_size)?;
+        firmware_area.set_icm(config_regs, icm_size)?;
 
         todo!()
+    }
+}
+
+impl Drop for ConnectX3Nic {
+    fn drop(&mut self) {
+        if let Some(firmware_area) = self.firmware_area.take() {
+            firmware_area
+                .unmap(&mut self.config_regs)
+                .expect("failed to unmap firmware area");
+        }
     }
 }

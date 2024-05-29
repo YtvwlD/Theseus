@@ -68,7 +68,7 @@ impl Firmware {
         }
         trace!("mapped {} pages for firmware area", self.pages);
 
-        Ok(MappedFirmwareArea { pages, physical, })
+        Ok(MappedFirmwareArea { pages, physical, icm_aux_area: None, })
     }
 }
 
@@ -105,6 +105,7 @@ struct VirtualPhysicalMapping {
 pub(super) struct MappedFirmwareArea {
     pages: MappedPages,
     physical: PhysicalAddress,
+    icm_aux_area: Option<MappedIcmAuxiliaryArea>,
 }
 
 impl MappedFirmwareArea {
@@ -138,7 +139,12 @@ impl MappedFirmwareArea {
     }
     
     /// Unmaps the area from the card. Further usage requires a software reset.
-    pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+    pub(super) fn unmap(mut self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+        if let Some(icm_aux_area) = self.icm_aux_area.take() {
+            icm_aux_area
+                .unmap(config_regs)
+                .unwrap()
+        }
         trace!("unmapping firmware area...");
         let mut cmd = CommandMailBox::new(config_regs)?;
         cmd.execute_command(Opcode::UnmapFa, 0, 0, 0)?;
@@ -157,6 +163,47 @@ impl MappedFirmwareArea {
         trace!("ICM auxilliary area requires {aux_pages} 4K pages");
         Ok(aux_pages)
     }
+
+    /// Map the ICM auxiliary area.
+    pub(super) fn map_icm_aux(
+        &mut self, config_regs: &mut MappedPages, aux_pages: u64,
+    ) -> Result<(), &'static str> {
+        if self.icm_aux_area.is_some() {
+            return Err("ICM auxiliary area has already been mapped");
+        }
+        // TODO: merge this with Firmware::map_area?
+        trace!("mapping ICM auxiliary area...");
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        let (pages, physical) = create_contiguous_mapping(
+            aux_pages as usize * PAGE_SIZE, DMA_FLAGS,
+        )?;
+        let mut align = physical.value().trailing_zeros();
+        if align > PAGE_SIZE.ilog2() {
+            trace!("alignment greater than max chunk size, defaulting to 256KB");
+            align = PAGE_SIZE.ilog2();
+        }
+        let size = aux_pages * PAGE_SIZE as u64;
+        let mut count = size / (1 << align);
+        if size % (1 << align) != 0 {
+            count += 1;
+        }
+        // TODO: we can batch as many vpm entries as fit in a mailbox (1 page)
+        // rather than 1 chunk per mailbox, this will make bootup faster
+        let (mut vpm_pages, vpm_physical) = create_contiguous_mapping(size_of::<VirtualPhysicalMapping>(), DMA_FLAGS)?;
+        let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
+        let mut pointer = physical;
+        for _ in 0..count {
+            vpm.physical_address.set(pointer.value().try_into().unwrap());
+            cmd.execute_command(
+                Opcode::MapIcmAux, vpm_physical.value() as u64, 1, 0,
+            )?;
+            pointer += 1 << align;
+        }
+        trace!("mapped {} pages for ICM auxiliary area", aux_pages);
+
+        self.icm_aux_area = Some(MappedIcmAuxiliaryArea { pages, physical, });
+        Ok(())
+    }
 }
 
 impl Drop for MappedFirmwareArea {
@@ -164,6 +211,33 @@ impl Drop for MappedFirmwareArea {
         panic!("please unmap instead of dropping")
     }
 }
+
+/// A mapped ICM auxiliary area.
+/// 
+/// Instead of dropping, please unmap the area from the card.
+pub(super) struct MappedIcmAuxiliaryArea {
+    pages: MappedPages,
+    physical: PhysicalAddress,
+}
+
+impl MappedIcmAuxiliaryArea {
+    /// Unmaps the area from the card.
+    pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+        trace!("unmapping ICM auxiliary area...");
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        cmd.execute_command(Opcode::UnmapIcmAux, 0, 0, 0)?;
+        trace!("successfully unmapped ICM auxiliary area");
+        core::mem::forget(self); // don't run the drop handler in this case
+        Ok(())
+    }
+}
+
+impl Drop for MappedIcmAuxiliaryArea {
+    fn drop(&mut self) {
+        panic!("please unmap instead of dropping")
+    }
+}
+
 
 #[bitfield]
 pub(super) struct Capabilities {

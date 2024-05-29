@@ -19,9 +19,6 @@ const POLL_TOKEN: u32 = 0xffff;
 #[derive(Debug, IntoPrimitive)]
 pub(super) enum Opcode {
     // initialization and general commands
-    UnmapFa = 0xffe,
-    MapFa = 0xfff,
-    RunFw = 0xff6,
     QueryDevCap = 0x03,
     QueryFw = 0x04,
     QueryAdapter = 0x06,
@@ -32,9 +29,13 @@ pub(super) enum Opcode {
     QueryHca = 0x0b,
     QueryPort = 0x43,
     SetPort = 0x0c,
+    RunFw = 0xff6,
     MapIcm = 0xffa,
+    UnmapIcmAux = 0xffb,
     MapIcmAux = 0xffc,
+    UnmapFa = 0xffe,
     SetIcmSize = 0xffd,
+    MapFa = 0xfff,
 
     // TPT commands
     // EQ commands

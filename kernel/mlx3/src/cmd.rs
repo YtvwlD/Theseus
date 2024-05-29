@@ -2,7 +2,7 @@
 //! and getting output back from the hca during verb calls and functions to execute verb calls.
 
 use byteorder::BigEndian;
-use memory::{MappedPages, PhysicalAddress};
+use memory::MappedPages;
 use num_enum_derive::IntoPrimitive;
 use volatile::{Volatile, WriteOnly};
 use zerocopy::{FromBytes, U32, U64};
@@ -55,7 +55,7 @@ pub(super) struct CommandMailBox<'a> {
 struct Hcr {
     in_param: WriteOnly<U64<BigEndian>>,
     in_mod: WriteOnly<U32<BigEndian>>,
-    out_param: WriteOnly<U64<BigEndian>>,
+    out_param: Volatile<U64<BigEndian>>,
     /// only the first 16 bits are usable
     token: WriteOnly<U32<BigEndian>>,
     /// status includes go, e, t and 5 reserved bits;
@@ -73,13 +73,19 @@ impl<'a> CommandMailBox<'a> {
 
     /// Post a command and wait for its completion.
     /// 
-    /// Any addresses referenced here are *physical* ones,
-    /// because the card has to work with them.
+    /// Input and output can be either 0 (for opcodes that take no input or
+    /// give no output), *physical* addresses (for opcodes that read from or
+    /// write to mailboxes) or integers (for opcodes the operate on immediate
+    /// values). Immediate outputs are also returned.
+    /// 
+    /// ## Safety
+    /// 
+    /// This function does not check whether addresses are valid or whether
+    /// the specified opcode takes the provided type of input or output.
     pub(super) fn execute_command(
         &mut self, opcode: Opcode,
-        input: Option<PhysicalAddress>, input_modifier: u32,
-        output: Option<PhysicalAddress>,
-    ) -> Result<(), &'static str> {
+        input: u64, input_modifier: u32, output: u64,
+    ) -> Result<u64, &'static str> {
         // TODO: timeout
 
         // wait until the previous command is done
@@ -87,13 +93,9 @@ impl<'a> CommandMailBox<'a> {
 
         // post the command
         trace!("executing command: {opcode:?}");
-        self.hcr.in_param.write(
-            input.map_or(0, |i| i.value() as u64).into()
-        );
+        self.hcr.in_param.write(input.into());
         self.hcr.in_mod.write(input_modifier.into());
-        self.hcr.out_param.write(
-            output.map_or(0, |o| o.value() as u64).into()
-        );
+        self.hcr.out_param.write(output.into());
         self.hcr.token.write((POLL_TOKEN << 16).into());
         // TODO: barrier?
         self.hcr.status_opcode.write((
@@ -109,9 +111,8 @@ impl<'a> CommandMailBox<'a> {
         while self.is_pending() {}
 
         // read the result
-        // TODO: read the actual result
         match self.hcr.status_opcode.read().get() >> 24 {
-            0 => Ok(()),
+            0 => Ok(self.hcr.out_param.read().get()),
             // TODO: interpret the number
             _ => Err("Status failed with error"),
         }

@@ -46,7 +46,7 @@ enum CmptType {
 /// Construct a profile.
 /// 
 /// It doesn't return the profile, though. You'll get [`InitHcaParameters`]
-/// and `total_size` instead.
+/// and `total_size` (the ICM size in bytes) instead.
 pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u64), &'static str> {
     let mut init_hca = InitHcaParameters::default();
     let mut total_size = 0;

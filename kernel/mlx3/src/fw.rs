@@ -30,7 +30,7 @@ impl Firmware {
         // TODO: this should not be in high memory (?)
         let (pages, physical) = create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)?;
         trace!("asking the card to put information about its firmware into {pages:?}@{physical}...");
-        cmd.execute_command(Opcode::QueryFw, None, 0, Some(physical))?;
+        cmd.execute_command(Opcode::QueryFw, 0, 0, physical.value() as u64)?;
         let mut fw = pages.as_type::<Firmware>(0)?.clone();
         fw.clr_int_bar = (fw.clr_int_bar >> 6) * 2;
         trace!("got firmware info: {fw:?}");
@@ -61,7 +61,9 @@ impl Firmware {
         let mut pointer = physical;
         for _ in 0..count {
             vpm.physical_address.set(pointer.value().try_into().unwrap());
-            cmd.execute_command(Opcode::MapFa, Some(vpm_physical), 1, None)?;
+            cmd.execute_command(
+                Opcode::MapFa, vpm_physical.value() as u64, 1, 0,
+            )?;
             pointer += 1 << align;
         }
         trace!("mapped {} pages for firmware area", self.pages);
@@ -108,7 +110,7 @@ pub(super) struct MappedFirmwareArea {
 impl MappedFirmwareArea {
     pub(super) fn run(&self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
         let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::RunFw, None, 0, None)?;
+        cmd.execute_command(Opcode::RunFw, 0, 0, 0)?;
         trace!("successfully run firmware");
         Ok(())
     }
@@ -116,7 +118,7 @@ impl MappedFirmwareArea {
      pub(super) fn query_capabilities(&self, config_regs: &mut MappedPages) -> Result<Capabilities, &'static str> {
         let mut cmd = CommandMailBox::new(config_regs)?;
         let (pages, physical) = create_contiguous_mapping(size_of::<Capabilities>(), DMA_FLAGS)?;
-        cmd.execute_command(Opcode::QueryDevCap, None, 0, Some(physical))?;
+        cmd.execute_command(Opcode::QueryDevCap, 0, 0, physical.value() as u64)?;
         let mut caps = Capabilities::from_bytes(pages.as_slice(
             0, size_of::<Capabilities>()
         )?.try_into().unwrap());
@@ -139,8 +141,19 @@ impl MappedFirmwareArea {
     pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
         trace!("unmapping firmware area...");
         let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::UnmapFa, None, 0, None)?;
+        cmd.execute_command(Opcode::UnmapFa, 0, 0, 0)?;
         Ok(())
+    }
+    
+    /// Set the ICM size.
+    /// 
+    /// Returns `aux_pages`, the auxiliary ICM size in pages.
+    pub(crate) fn set_icm(&self, config_regs: &mut MappedPages, icm_size: u64) -> Result<u64, &'static str> {
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        let aux_pages = cmd.execute_command(Opcode::SetIcmSize, icm_size, 0, 0)?;
+        // TODO: round up number of system pages needed if ICM_PAGE_SIZE < PAGE_SIZE
+        trace!("ICM auxilliary area requires {aux_pages} 4K pages");
+        Ok(aux_pages)
     }
 }
 

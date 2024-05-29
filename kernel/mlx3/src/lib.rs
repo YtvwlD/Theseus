@@ -61,7 +61,8 @@ impl ConnectX3Nic {
         firmware_area.run(&mut config_regs)?;
         let caps = firmware_area.query_capabilities(&mut config_regs)?;
         // In the Nautilus driver, some of the port setup already happens here.
-        make_profile(&caps)?;
+        let (init_hca_params, icm_size) = make_profile(&caps)?;
+        firmware_area.set_icm(&mut config_regs, icm_size)?;
 
         todo!()
     }

@@ -15,22 +15,24 @@ enum CmptType {
 /// 
 /// Instead of dropping, please unmap the area from the card.
 pub(super) struct MappedIcmAuxiliaryArea {
-    pages: MappedPages,
-    physical: PhysicalAddress,
+    memory: Option<(MappedPages, PhysicalAddress)>,
 }
 
 impl MappedIcmAuxiliaryArea {
     pub(super) fn new(pages: MappedPages, physical: PhysicalAddress) -> Self {
-        Self { pages, physical, }
+        Self { memory: Some((pages, physical)), }
     }
 
     /// Unmaps the area from the card.
-    pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+    pub(super) fn unmap(
+        mut self, config_regs: &mut MappedPages,
+    ) -> Result<(), &'static str> {
         trace!("unmapping ICM auxiliary area...");
         let mut cmd = CommandMailBox::new(config_regs)?;
         cmd.execute_command(Opcode::UnmapIcmAux, 0, 0, 0)?;
         trace!("successfully unmapped ICM auxiliary area");
-        core::mem::forget(self); // don't run the drop handler in this case
+        // actually free the memory
+        self.memory.take();
         Ok(())
     }
     
@@ -185,7 +187,9 @@ impl MappedIcmAuxiliaryArea {
 
 impl Drop for MappedIcmAuxiliaryArea {
     fn drop(&mut self) {
-        panic!("please unmap instead of dropping")
+        if self.memory.is_some() {
+            panic!("please unmap instead of dropping")
+        }
     }
 }
 
@@ -241,8 +245,7 @@ struct MrTable {
 
 /// An ICM mapping.
 struct MappedIcm {
-    pages: MappedPages,
-    physical: PhysicalAddress,
+    memory: Option<(MappedPages, PhysicalAddress)>,
     card_virtual: u64,
     num_pages: u32,
 }
@@ -282,23 +285,28 @@ impl MappedIcm {
             phys_pointer += 1 << align;
             virt_pointer += 1 << align;
         }
-        Ok(Self { pages, physical, card_virtual, num_pages, })
+        Ok(Self { memory: Some((pages, physical)), card_virtual, num_pages, })
     }
 
     /// Unmaps the area from the card.
-    pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+    pub(super) fn unmap(
+        mut self, config_regs: &mut MappedPages,
+    ) -> Result<(), &'static str> {
         let mut cmd = CommandMailBox::new(config_regs)?;
         cmd.execute_command(
             Opcode::UnmapIcm, self.card_virtual, self.num_pages, 0,
         )?;
-        core::mem::forget(self); // don't run the drop handler in this case
+        // actually free the memory
+        self.memory.take();
         Ok(())
     }
 }
 
 impl Drop for MappedIcm {
     fn drop(&mut self) {
-        panic!("please unmap instead of dropping")
+        if self.memory.is_some() {
+            panic!("please unmap instead of dropping")
+        }
     }
 }
 

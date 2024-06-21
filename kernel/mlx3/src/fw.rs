@@ -68,7 +68,10 @@ impl Firmware {
         }
         trace!("mapped {} pages for firmware area", self.pages);
 
-        Ok(MappedFirmwareArea { pages, physical, icm_aux_area: None, })
+        Ok(MappedFirmwareArea {
+            memory: Some((pages, physical)),
+            icm_aux_area: None,
+        })
     }
 }
 
@@ -103,8 +106,7 @@ pub(super) struct VirtualPhysicalMapping {
 /// 
 /// Instead of dropping, please unmap the area from the card.
 pub(super) struct MappedFirmwareArea {
-    pages: MappedPages,
-    physical: PhysicalAddress,
+    memory: Option<(MappedPages, PhysicalAddress)>,
     icm_aux_area: Option<MappedIcmAuxiliaryArea>,
 }
 
@@ -149,7 +151,8 @@ impl MappedFirmwareArea {
         let mut cmd = CommandMailBox::new(config_regs)?;
         cmd.execute_command(Opcode::UnmapFa, 0, 0, 0)?;
         trace!("successfully unmapped firmware area");
-        core::mem::forget(self); // don't run the drop handler in this case
+        // actually free the memory
+        self.memory.take();
         Ok(())
     }
     
@@ -208,7 +211,9 @@ impl MappedFirmwareArea {
 
 impl Drop for MappedFirmwareArea {
     fn drop(&mut self) {
-        panic!("please unmap instead of dropping")
+        if self.icm_aux_area.is_some() || self.memory.is_some() {
+            panic!("please unmap instead of dropping");
+        }
     }
 }
 

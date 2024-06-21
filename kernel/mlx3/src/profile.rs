@@ -108,6 +108,7 @@ pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u6
             );
         }
     }
+    init_hca.rdmarc_shift = 0;
     for profile in profiles.iter() {
         match profile.typ {
             ResourceType::CMPT => init_hca.cmpt_base = profile.start,
@@ -139,12 +140,11 @@ pub(super) fn make_profile(caps: &Capabilities) -> Result<(InitHcaParameters, u6
             },
             ResourceType::RDMARC => {
                 // TODO: this should be possible without a loop
-                let mut rdmarc_shift = 0;
-                while DEFAULT_NUM_QP << rdmarc_shift < profile.num {
-                    init_hca.max_qp_dest_rdma = 1 << rdmarc_shift;
+                while DEFAULT_NUM_QP << init_hca.rdmarc_shift < profile.num {
+                    init_hca.max_qp_dest_rdma = 1 << init_hca.rdmarc_shift;
                     init_hca.rdmarc_base = profile.start;
-                    init_hca.log_rd_per_qp = rdmarc_shift;
-                    rdmarc_shift += 1;
+                    init_hca.log_rd_per_qp = init_hca.rdmarc_shift;
+                    init_hca.rdmarc_shift += 1;
                 }
             },
             ResourceType::DMPT => {

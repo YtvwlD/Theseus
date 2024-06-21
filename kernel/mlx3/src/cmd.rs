@@ -30,6 +30,7 @@ pub(super) enum Opcode {
     QueryPort = 0x43,
     SetPort = 0x0c,
     RunFw = 0xff6,
+    UnmapIcm = 0xff9,
     MapIcm = 0xffa,
     UnmapIcmAux = 0xffb,
     MapIcmAux = 0xffc,

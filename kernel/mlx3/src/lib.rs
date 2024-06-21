@@ -4,16 +4,19 @@
 //! and the existing mlx5 driver.
 
 #![no_std]
+extern crate alloc;
 
 mod cmd;
 mod device;
 mod fw;
+mod icm;
 mod mcg;
 mod profile;
 
 #[macro_use] extern crate log;
 
 use fw::MappedFirmwareArea;
+use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
 use sync_irq::IrqSafeMutex;
@@ -31,6 +34,7 @@ pub const CONNECTX3_DEV: u16 = 0x1003;
 pub struct ConnectX3Nic {
     config_regs: MappedPages,
     firmware_area: Option<MappedFirmwareArea>,
+    icm_tables: Option<MappedIcmTables>,
 }
 
 /// Functions that setup the struct.
@@ -61,7 +65,11 @@ impl ConnectX3Nic {
         Ownership::get(&config_regs)?;
         let firmware = Firmware::query(&mut config_regs)?;
         let firmware_area = firmware.map_area(&mut config_regs)?;
-        let mut nic = Self { config_regs, firmware_area: Some(firmware_area) };
+        let mut nic = Self {
+            config_regs,
+            firmware_area: Some(firmware_area),
+            icm_tables: None,
+        };
         let firmware_area = nic.firmware_area.as_mut().unwrap();
         let config_regs = &mut nic.config_regs;
         firmware_area.run(config_regs)?;
@@ -69,7 +77,8 @@ impl ConnectX3Nic {
         // In the Nautilus driver, some of the port setup already happens here.
         let (init_hca_params, icm_size) = make_profile(&caps)?;
         let aux_pages = firmware_area.set_icm(config_regs, icm_size)?;
-        firmware_area.map_icm_aux(config_regs, aux_pages)?;
+        let icm_aux_area = firmware_area.map_icm_aux(config_regs, aux_pages)?;
+        nic.icm_tables = Some(icm_aux_area.map_icm_tables(config_regs, &init_hca_params, &caps)?);
 
         todo!()
     }
@@ -77,6 +86,11 @@ impl ConnectX3Nic {
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
+        if let Some(icm_tables) = self.icm_tables.take() {
+            icm_tables
+                .unmap(&mut self.config_regs)
+                .unwrap()
+        }
         if let Some(firmware_area) = self.firmware_area.take() {
             firmware_area
                 .unmap(&mut self.config_regs)

@@ -7,7 +7,7 @@ use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS,
 use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B11, B12, B15, B2, B24, B3, B31, B36, B4, B5, B6, B7, B72}};
 use zerocopy::{FromBytes, U16, U64};
 
-use crate::cmd::{CommandMailBox, Opcode};
+use crate::{cmd::{CommandMailBox, Opcode}, icm::MappedIcmAuxiliaryArea};
 
 #[derive(Clone, FromBytes)]
 #[repr(C, packed)]
@@ -92,11 +92,11 @@ impl core::fmt::Debug for Firmware {
 
 #[derive(Clone, FromBytes, Default)]
 #[repr(C, packed)]
-struct VirtualPhysicalMapping {
+pub(super) struct VirtualPhysicalMapping {
     // actually just 52 bits
-    virtual_address: U64<BigEndian>,
+    pub(super) virtual_address: U64<BigEndian>,
     // actually just 52 bits and then log2size
-    physical_address: U64<BigEndian>,
+    pub(super) physical_address: U64<BigEndian>,
 }
 
 /// A mapped firmware area.
@@ -167,7 +167,7 @@ impl MappedFirmwareArea {
     /// Map the ICM auxiliary area.
     pub(super) fn map_icm_aux(
         &mut self, config_regs: &mut MappedPages, aux_pages: u64,
-    ) -> Result<(), &'static str> {
+    ) -> Result<&MappedIcmAuxiliaryArea, &'static str> {
         if self.icm_aux_area.is_some() {
             return Err("ICM auxiliary area has already been mapped");
         }
@@ -201,8 +201,8 @@ impl MappedFirmwareArea {
         }
         trace!("mapped {} pages for ICM auxiliary area", aux_pages);
 
-        self.icm_aux_area = Some(MappedIcmAuxiliaryArea { pages, physical, });
-        Ok(())
+        self.icm_aux_area = Some(MappedIcmAuxiliaryArea::new(pages, physical));
+        Ok(self.icm_aux_area.as_ref().unwrap())
     }
 }
 
@@ -212,43 +212,16 @@ impl Drop for MappedFirmwareArea {
     }
 }
 
-/// A mapped ICM auxiliary area.
-/// 
-/// Instead of dropping, please unmap the area from the card.
-pub(super) struct MappedIcmAuxiliaryArea {
-    pages: MappedPages,
-    physical: PhysicalAddress,
-}
-
-impl MappedIcmAuxiliaryArea {
-    /// Unmaps the area from the card.
-    pub(super) fn unmap(self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
-        trace!("unmapping ICM auxiliary area...");
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::UnmapIcmAux, 0, 0, 0)?;
-        trace!("successfully unmapped ICM auxiliary area");
-        core::mem::forget(self); // don't run the drop handler in this case
-        Ok(())
-    }
-}
-
-impl Drop for MappedIcmAuxiliaryArea {
-    fn drop(&mut self) {
-        panic!("please unmap instead of dropping")
-    }
-}
-
-
 #[bitfield]
 pub(super) struct Capabilities {
     #[skip] __: u128,
     log_max_srq_sz: u8,
     log_max_qp_sz: u8,
     #[skip] __: B4,
-    log2_rsvd_qps: B4,
+    pub(super) log2_rsvd_qps: B4,
     #[skip] __: B3,
     log_max_qp: B5,
-    log2_rsvd_srqs: B4,
+    pub(super) log2_rsvd_srqs: B4,
     #[skip] __: B7,
     log_max_srqs: B5,
     #[skip] __: B2,
@@ -259,7 +232,7 @@ pub(super) struct Capabilities {
     num_rsvd_eqs: u8,
     log_max_cq_sz: u8,
     #[skip] __: B4,
-    log2_rsvd_cqs: B4,
+    pub(super) log2_rsvd_cqs: B4,
     #[skip] __: B3,
     log_max_cq: B5,
     log_max_eq_sz: u8,
@@ -270,12 +243,12 @@ pub(super) struct Capabilities {
     log2_rsvd_eqs: B4,
     #[skip] __: B4,
     log_max_eq: B4,
-    log2_rsvd_mtts: B4,
+    pub(super) log2_rsvd_mtts: B4,
     #[skip] __: B4,
     #[skip] __: B1,
     log_max_mrw_sz: B7,
     #[skip] __: B4,
-    log2_rsvd_mrws: B4,
+    pub(super) log2_rsvd_mrws: B4,
     #[skip] __: B2,
     log_max_mtts: B6,
     #[skip] __: u16,
@@ -490,4 +463,6 @@ pub(super) struct InitHcaParameters {
     pub(super) log_rd_per_qp: u8,
     pub(super) log_mc_table_sz: u8,
     pub(super) log_mpt_sz: u8,
+    // the C driver doesn't have this here
+    pub(super) rdmarc_shift: u8,
 }

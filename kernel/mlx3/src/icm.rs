@@ -3,7 +3,7 @@ use core::mem::size_of;
 use alloc::vec::Vec;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 
-use crate::{cmd::{CommandMailBox, Opcode}, fw::{Capabilities, InitHcaParameters, VirtualPhysicalMapping}, mcg::get_mgm_entry_size};
+use crate::{cmd::{CommandMailBox, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile};
 
 #[repr(u64)]
 #[derive(Default, Clone, Copy)]
@@ -38,41 +38,41 @@ impl MappedIcmAuxiliaryArea {
     
     pub(super) fn map_icm_tables(
         &self, config_regs: &mut MappedPages,
-        init_hca_params: &InitHcaParameters, caps: &Capabilities,
+        profile: &Profile, caps: &Capabilities,
     ) -> Result<MappedIcmTables, &'static str> {
         // first, map the cmpt tables
         const CMPT_SHIFT: u8 = 24;
         // TODO: do we really need to calculate the bases here?
         let qp_cmpt_table = self.init_icm_table(
-            config_regs, caps.c_mpt_entry_sz(), init_hca_params.num_qps,
+            config_regs, caps.c_mpt_entry_sz(), profile.init_hca.num_qps(),
             1 << caps.log2_rsvd_qps(),
-            init_hca_params.cmpt_base + (CmptType::QP as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
+            profile.init_hca.tpt_cmpt_base() + (CmptType::QP as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
         )?;
         trace!("mapped QP cMPT table");
         let srq_cmpt_table = self.init_icm_table(
-            config_regs, caps.c_mpt_entry_sz(), init_hca_params.num_srqs,
+            config_regs, caps.c_mpt_entry_sz(), profile.init_hca.num_srqs(),
             1 << caps.log2_rsvd_srqs(),
-            init_hca_params.cmpt_base + (CmptType::SRQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
+            profile.init_hca.tpt_cmpt_base() + (CmptType::SRQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
         )?;
         trace!("mapped SRQ cMPT table");
         let cq_cmpt_table = self.init_icm_table(
-            config_regs, caps.c_mpt_entry_sz(), init_hca_params.num_cqs,
+            config_regs, caps.c_mpt_entry_sz(), profile.init_hca.num_cqs(),
             1 << caps.log2_rsvd_cqs(),
-            init_hca_params.cmpt_base + (CmptType::CQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
+            profile.init_hca.tpt_cmpt_base() + (CmptType::CQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
         )?;
         trace!("mapped CQ cMPT table");
         let eq_cmpt_table = self.init_icm_table(
-            config_regs, caps.c_mpt_entry_sz(), init_hca_params.num_eqs,
-            init_hca_params.num_eqs,
-            init_hca_params.cmpt_base + (CmptType::EQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
+            config_regs, caps.c_mpt_entry_sz(), profile.init_hca.num_eqs(),
+            profile.init_hca.num_eqs(),
+            profile.init_hca.tpt_cmpt_base() + (CmptType::EQ as u64 * caps.c_mpt_entry_sz() as u64) << CMPT_SHIFT,
         )?;
         trace!("mapped EQ cMPT table");
 
         // then, the rest
         let eq_table = EqTable {
             table: self.init_icm_table(
-                config_regs, caps.eqc_entry_sz(), init_hca_params.num_eqs,
-                init_hca_params.num_eqs, init_hca_params.eqc_base,
+                config_regs, caps.eqc_entry_sz(), profile.init_hca.num_eqs(),
+                profile.init_hca.num_eqs(), profile.init_hca.qpc_eqc_base(),
             )?,
             cmpt_table: eq_cmpt_table,
         };
@@ -86,54 +86,54 @@ impl MappedIcmAuxiliaryArea {
         ).next_multiple_of(64) / caps.mtt_entry_sz() as usize;
         let mr_table = MrTable {
             mtt_table: self.init_icm_table(
-                config_regs, caps.mtt_entry_sz(), init_hca_params.num_mtts,
-                reserved_mtts, init_hca_params.mtt_base,
+                config_regs, caps.mtt_entry_sz(), profile.num_mtts,
+                reserved_mtts, profile.init_hca.tpt_mtt_base(),
             )?,
             dmpt_table: self.init_icm_table(
-                config_regs, caps.d_mpt_entry_sz(), init_hca_params.num_mpts,
-                1 << caps.log2_rsvd_mrws(), init_hca_params.dmpt_base,
+                config_regs, caps.d_mpt_entry_sz(), profile.num_mpts,
+                1 << caps.log2_rsvd_mrws(), profile.init_hca.tpt_dmpt_base(),
             )?,
         };
         let qp_table = QpTable {
             table: self.init_icm_table(
-                config_regs, caps.qpc_entry_sz(), init_hca_params.num_qps,
-                1 << caps.log2_rsvd_qps(), init_hca_params.qpc_base,
+                config_regs, caps.qpc_entry_sz(), profile.init_hca.num_qps(),
+                1 << caps.log2_rsvd_qps(), profile.init_hca.qpc_base(),
             )?,
             cmpt_table: qp_cmpt_table,
             auxc_table: self.init_icm_table(
-                config_regs, caps.aux_entry_sz(), init_hca_params.num_qps,
-                1 << caps.log2_rsvd_qps(), init_hca_params.auxc_base,
+                config_regs, caps.aux_entry_sz(), profile.init_hca.num_qps(),
+                1 << caps.log2_rsvd_qps(), profile.init_hca.qpc_auxc_base(),
             )?,
             altc_table: self.init_icm_table(
-                config_regs, caps.altc_entry_sz(), init_hca_params.num_qps,
-                1 << caps.log2_rsvd_qps(), init_hca_params.altc_base,
+                config_regs, caps.altc_entry_sz(), profile.init_hca.num_qps(),
+                1 << caps.log2_rsvd_qps(), profile.init_hca.qpc_altc_base(),
             )?,
             rdmarc_table: self.init_icm_table(
-                config_regs, caps.rdmarc_entry_sz() << init_hca_params.rdmarc_shift,
-                init_hca_params.num_qps, 1 << caps.log2_rsvd_qps(),
-                init_hca_params.rdmarc_base,
+                config_regs, caps.rdmarc_entry_sz() << profile.rdmarc_shift,
+                profile.init_hca.num_qps(), 1 << caps.log2_rsvd_qps(),
+                profile.init_hca.qpc_rdmarc_base(),
             )?,
-            rdmarc_base: init_hca_params.rdmarc_base,
-            rdmarc_shift: init_hca_params.rdmarc_shift,
+            rdmarc_base: profile.init_hca.qpc_rdmarc_base(),
+            rdmarc_shift: profile.rdmarc_shift,
         };
         let cq_table = CqTable {
             table: self.init_icm_table(
-                config_regs, caps.cqc_entry_sz(), init_hca_params.num_cqs,
-                1 << caps.log2_rsvd_cqs(), init_hca_params.cqc_base,
+                config_regs, caps.cqc_entry_sz(), profile.init_hca.num_cqs(),
+                1 << caps.log2_rsvd_cqs(), profile.init_hca.qpc_cqc_base(),
             )?,
             cmpt_table: cq_cmpt_table,
         };
         let srq_table = SrqTable {
             table: self.init_icm_table(
-                config_regs, caps.srq_entry_sz(), init_hca_params.num_srqs,
-                1 << caps.log2_rsvd_srqs(), init_hca_params.srqc_base,
+                config_regs, caps.srq_entry_sz(), profile.init_hca.num_srqs(),
+                1 << caps.log2_rsvd_srqs(), profile.init_hca.qpc_srqc_base(),
             )?,
             cmpt_table: srq_cmpt_table,
         };
         let mcg_table = self.init_icm_table(
             config_regs, get_mgm_entry_size().try_into().unwrap(),
-            init_hca_params.num_mgms + init_hca_params.num_amgms,
-            init_hca_params.num_mgms + init_hca_params.num_amgms, init_hca_params.mc_base,
+            profile.num_mgms + profile.num_amgms,
+            profile.num_mgms + profile.num_amgms, profile.init_hca.mc_base(),
         )?;
         trace!("ICM tables mapped successfully");
         Ok(MappedIcmTables {

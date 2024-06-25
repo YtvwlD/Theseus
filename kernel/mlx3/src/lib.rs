@@ -15,7 +15,7 @@ mod profile;
 
 #[macro_use] extern crate log;
 
-use fw::MappedFirmwareArea;
+use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
@@ -23,7 +23,7 @@ use sync_irq::IrqSafeMutex;
 
 use crate::device::{Ownership, ResetRegisters};
 use crate::fw::Firmware;
-use crate::profile::make_profile;
+use crate::profile::Profile;
 
 /// Vendor ID for Mellanox
 pub const MLX_VEND: u16 = 0x15b3;
@@ -35,6 +35,7 @@ pub struct ConnectX3Nic {
     config_regs: MappedPages,
     firmware_area: Option<MappedFirmwareArea>,
     icm_tables: Option<MappedIcmTables>,
+    hca: Option<Hca>,
 }
 
 /// Functions that setup the struct.
@@ -69,16 +70,18 @@ impl ConnectX3Nic {
             config_regs,
             firmware_area: Some(firmware_area),
             icm_tables: None,
+            hca: None,
         };
         let firmware_area = nic.firmware_area.as_mut().unwrap();
         let config_regs = &mut nic.config_regs;
         firmware_area.run(config_regs)?;
         let caps = firmware_area.query_capabilities(config_regs)?;
         // In the Nautilus driver, some of the port setup already happens here.
-        let (init_hca_params, icm_size) = make_profile(&caps)?;
-        let aux_pages = firmware_area.set_icm(config_regs, icm_size)?;
+        let mut profile = Profile::new(&caps)?;
+        let aux_pages = firmware_area.set_icm(config_regs, profile.total_size)?;
         let icm_aux_area = firmware_area.map_icm_aux(config_regs, aux_pages)?;
-        nic.icm_tables = Some(icm_aux_area.map_icm_tables(config_regs, &init_hca_params, &caps)?);
+        nic.icm_tables = Some(icm_aux_area.map_icm_tables(config_regs, &profile, &caps)?);
+        nic.hca = Some(profile.init_hca.init_hca(config_regs)?);
 
         todo!()
     }
@@ -86,6 +89,11 @@ impl ConnectX3Nic {
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
+        if let Some(hca) = self.hca.take() {
+            hca
+                .close(&mut self.config_regs)
+                .unwrap()
+        }
         if let Some(icm_tables) = self.icm_tables.take() {
             icm_tables
                 .unmap(&mut self.config_regs)

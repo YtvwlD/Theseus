@@ -4,7 +4,7 @@ use core::mem::size_of;
 
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B11, B12, B15, B2, B24, B3, B31, B36, B4, B5, B6, B7, B72}};
+use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, B2, B20, B22, B24, B25, B27, B3, B31, B36, B4, B42, B45, B5, B6, B63, B7, B72, B88, B91}};
 use zerocopy::{FromBytes, U16, U64};
 
 use crate::{cmd::{CommandMailBox, Opcode}, icm::MappedIcmAuxiliaryArea};
@@ -436,38 +436,306 @@ impl core::fmt::Debug for Capabilities {
     }
 }
 
-// TODO: this is just a placeholder for now
-#[derive(Default)]
+#[bitfield]
 pub(super) struct InitHcaParameters {
-    pub(super) qpc_base: u64,
-    pub(super) rdmarc_base: u64,
-    pub(super) auxc_base: u64,
-    pub(super) altc_base: u64,
-    pub(super) srqc_base: u64,
-    pub(super) cqc_base: u64,
-    pub(super) eqc_base: u64,
+    version: u8,
+    #[skip] __: B104,
+    cacheline_sz: B3,
+    // vxlan?
+    #[skip] __: B45,
+    flags: u32,
+    recoverable_error_event: bool,
+    #[skip] __: B63,
+
+    // QPC parameters
+    #[skip] __: u128,
+    /// contains both the base (in the upper 59 bits) and log_num (in the lower 5 bits)
+    qpc_base_num: u64,
+    #[skip] __: u128,
+    /// contains both the base (in the upper 59 bits) and log_num (in the lower 5 bits)
+    qpc_srqc_base_num: u64,
+    /// contains both the base (in the upper 59 bits) and log_num (in the lower 5 bits)
+    qpc_cqc_base_num: u64,
+    #[skip] __: bool,
+    qpc_cqe: bool,
+    qpc_eqe: bool,
+    #[skip] __: B22,
+    qpc_eqe_stride: B3,
+    #[skip] __: bool,
+    qpc_cqe_stride: B3,
+    #[skip] __: u32,
+    pub(super) qpc_altc_base: u64,
+    #[skip] __: u64,
+    pub(super) qpc_auxc_base: u64,
+    #[skip] __: u64,
+    /// contains both the base (in the upper 59 bits) and log_num (in the lower 5 bits)
+    qpc_eqc_base_num: u64,
+    #[skip] __: B20,
+    qpc_num_sys_eqs: B12,
+    #[skip] __: u32,
+    /// contains both the base (in the upper 59 bits) and log_num (in the lower 3 bits)
+    qpc_rdmarc_base_num: u64,
+    #[skip] __: u64,
+
+    // skip 8 u32
+    #[skip] __: u128,
+    #[skip] __: u128,
+
+    // multicast parameters
     pub(super) mc_base: u64,
-    pub(super) dmpt_base: u64,
-    pub(super) cmpt_base: u64,
-    pub(super) mtt_base: u64,
-    pub(super) num_cqs: usize,
-    pub(super) num_qps: usize,
-    pub(super) num_eqs: usize,
-    pub(super) num_mpts: usize,
-    pub(super) num_mgms: usize,
-    pub(super) num_amgms: usize,
-    pub(super) num_srqs: usize,
-    pub(super) num_mtts: usize,
-    pub(super) max_qp_dest_rdma: usize,
-    pub(super) log_mc_entry_sz: u16,
-    pub(super) log_mc_hash_sz: u16,
-    pub(super) log_num_qps: u8,
-    pub(super) log_num_srqs: u8,
-    pub(super) log_num_cqs: u8,
-    pub(super) log_num_eqs: u8,
-    pub(super) log_rd_per_qp: u8,
-    pub(super) log_mc_table_sz: u8,
-    pub(super) log_mpt_sz: u8,
-    // the C driver doesn't have this here
-    pub(super) rdmarc_shift: u8,
+    #[skip] __: B91,
+    pub(super) mc_log_entry_sz: B5,
+    #[skip] __: B27,
+    pub(super) mc_log_hash_sz: B5,
+    #[skip] __: B4,
+    mc_uc_steering: bool,
+    #[skip] __: B22,
+    pub(super) mc_log_table_sz: B5,
+    #[skip] __: u32,
+
+    #[skip] __: u128,
+    
+    // translation and protection table parameters
+    pub(super) tpt_dmpt_base: u64,
+    /// enable memory windows
+    tpt_mw: bool,
+    #[skip] __: B25,
+    pub(super) tpt_log_dmpt_sz: B6,
+    #[skip] __: u32,
+    pub(super) tpt_mtt_base: u64,
+    pub(super) tpt_cmpt_base: u64,
+    #[skip] __: u64,
+
+    #[skip] __: u64,
+
+    // UAR parameters
+    #[skip] __: B88,
+    /// log page size in 4k chunks
+    uar_log_sz: u8,
+    #[skip] __: u128,
+
+    // skip 36 u32
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+
+    // flow steering parameters
+    fs_base: u64,
+    #[skip] __: B91,
+    fs_log_entry_sz: B5,
+    #[skip] __: u32,
+    fs_a0: B2,
+    #[skip] __: B25,
+    fs_log_table_sz: B5,
+    #[skip] __: B42,
+    fs_eth_bits: B6,
+    fs_eth_num_addrs: u16,
+    #[skip] __: B12,
+    fs_ib_bits: B3,
+    #[skip] __: bool,
+    fs_ib_num_addrs: u16,
+
+    // skip 66 u32
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u64,
+}
+
+impl InitHcaParameters {
+    pub(super) fn init_hca(
+        &mut self, config_regs: &mut MappedPages,
+    ) -> Result<Hca, &'static str> {
+        const DEFAULT_UAR_PAGE_SHIFT: u8 = 12;
+        const PAGE_SHIFT: u8 = 12;
+
+        // set the needed values
+        self.set_version(2); // version must be 2
+        // TODO: use a library for this
+        let mut flags = 0;
+        flags &= !(1 << 1); // little endian on the host
+        flags |= 1 << 4; // enable counters / checksums
+        flags |= 1; // check port for UD adress vector
+        self.set_flags(flags);
+        self.set_uar_log_sz(DEFAULT_UAR_PAGE_SHIFT - PAGE_SHIFT);
+        
+        // execute the command
+        let (mut pages, physical) = create_contiguous_mapping(size_of::<Self>(), DMA_FLAGS)?;
+        let slice = pages.as_slice_mut(0, size_of::<Self>())?;
+        slice.copy_from_slice(&self.bytes);
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        cmd.execute_command(Opcode::InitHca, physical.value() as u64, 0, 0)?;
+        trace!("HCA initialized");
+        Ok(Hca { initialized: true, })
+    }
+
+    /// Get the number of queue pairs out of qpc_base_num.
+    pub(super) fn num_qps(&self) -> usize {
+        1 << (self.qpc_base_num() & 0x1f)
+    }
+
+    /// Set the (log) number of queue pairs in qpc_base_num.
+    pub(super) fn set_qpc_log_qp(&mut self, new: u64) {
+        assert_eq!(new & 0x1f, new);
+        self.set_qpc_base_num(
+            self.qpc_base_num() & 0xffffffffffffffe0 | new & 0x1f
+        );
+    }
+
+    /// Get the QPC base out of qpc_base_num.
+    pub(super) fn qpc_base(&self) -> u64 {
+        self.qpc_base_num() & 0xffffffffffffffe0
+    }
+
+    /// Set the QPC base in qpc_base_num
+    pub(super) fn set_qpc_base(&mut self, new: u64) {
+        assert_eq!(new & 0xffffffffffffffe0, new);
+        self.set_qpc_base_num(
+            self.qpc_base_num() & 0x1f | new & 0xffffffffffffffe0
+        );
+    }
+
+    /// Get the number of SRQs out of qpc_srqc_base_num.
+    pub(super) fn num_srqs(&self) -> usize {
+        1 << (self.qpc_srqc_base_num() & 0x1f)
+    }
+
+    /// Set the (log) number of SRQs in qpc_srqc_base_num.
+    pub(super) fn set_qpc_log_srq(&mut self, new: u64) {
+        assert_eq!(new & 0x1f, new);
+        self.set_qpc_srqc_base_num(
+            self.qpc_srqc_base_num() & 0xffffffffffffffe0 | new & 0x1f
+        );
+    }
+
+    /// Get the SRQ base out of qpc_srqc_base_num
+    pub(super) fn qpc_srqc_base(&self) -> u64 {
+        self.qpc_srqc_base_num() & 0xffffffffffffffe0
+    }
+
+    /// Set the SRQ base in qpc_srqc_base_num
+    pub(super) fn set_qpc_srqc_base(&mut self, new: u64) {
+        assert_eq!(new & 0xffffffffffffffe0, new);
+        self.set_qpc_srqc_base_num(
+            self.qpc_srqc_base_num() & 0x1f | new & 0xffffffffffffffe0
+        );
+    }
+
+    /// Get the number of completion queues out of qpc_cqc_base_num.
+    pub(super) fn num_cqs(&self) -> usize {
+        1 << (self.qpc_cqc_base_num() & 0x1f)
+    }
+
+    /// Set the (log) number of completions queues in qpc_cqc_base_num.
+    pub(super) fn set_qpc_log_cq(&mut self, new: u64) {
+        assert_eq!(new & 0x1f, new);
+        self.set_qpc_cqc_base_num(
+            self.qpc_cqc_base_num() & 0xffffffffffffffe0 | new & 0x1f
+        );
+    }
+
+    /// Get the CQC base out of qpc_cqc_base_num
+    pub(super) fn qpc_cqc_base(&self) -> u64 {
+        self.qpc_cqc_base_num() & 0xffffffffffffffe0
+    }
+
+    /// Set the CQC base in qpc_cqc_base_num
+    pub(super) fn set_qpc_cqc_base(&mut self, new: u64) {
+        assert_eq!(new & 0xffffffffffffffe0, new);
+        self.set_qpc_cqc_base_num(
+            self.qpc_cqc_base_num() & 0x1f | new & 0xffffffffffffffe0
+        );
+    }
+
+    /// Get the number of event queues out of qpc_eqc_base_num.
+    pub(super) fn num_eqs(&self) -> usize {
+        1 << (self.qpc_eqc_base_num() & 0x1f)
+    }
+
+    /// Set the (log) number of event queues in qpc_eqc_base_num.
+    pub(super) fn set_qpc_log_eq(&mut self, new: u64) {
+        assert_eq!(new & 0x1f, new);
+        self.set_qpc_eqc_base_num(
+            self.qpc_eqc_base_num() & 0xffffffffffffffe0 | new & 0x1f
+        );
+    }
+
+    /// Get the EQC base out of qpc_eqc_base_num.
+    pub(super) fn qpc_eqc_base(&self) -> u64 {
+        self.qpc_eqc_base_num() & 0xffffffffffffffe0
+    }
+
+    /// Set the EQC base in qpc_eqc_base_num
+    pub(super) fn set_qpc_eqc_base(&mut self, new: u64) {
+        assert_eq!(new & 0xffffffffffffffe0, new);
+        self.set_qpc_eqc_base_num(
+            self.qpc_eqc_base_num() & 0x1f | new & 0xffffffffffffffe0
+        );
+    }
+
+    /// Set the (log) number of RDs in qpc_rdmarc_base_num.
+    pub(super) fn set_qpc_log_rd(&mut self, new: u8) {
+        assert_eq!(new & 0x7, new);
+        self.set_qpc_rdmarc_base_num(
+            self.qpc_rdmarc_base_num() & 0xffffffffffffffe0 | new as u64 & 0x7
+        );
+    }
+
+    /// Get the RDMARC base out of qpc_rdmarc_base_num.
+    pub(super) fn qpc_rdmarc_base(&self) -> u64 {
+        self.qpc_rdmarc_base_num() & 0xffffffffffffffe0
+    }
+
+    /// Set the RDMARC base in qpc_rdmarc_base_num
+    pub(super) fn set_qpc_rdmarc_base(&mut self, new: u64) {
+        assert_eq!(new & 0xffffffffffffffe0, new);
+        self.set_qpc_rdmarc_base_num(
+            self.qpc_rdmarc_base_num() & 0x7 | new & 0xffffffffffffffe0
+        );
+    }
+}
+
+// an initialized Host Channel Adapter
+pub(super) struct Hca {
+    initialized: bool,
+}
+
+impl Hca {
+    pub(super) fn close(
+        mut self, config_regs: &mut MappedPages,
+    ) -> Result<(), &'static str> {
+        trace!("Closing HCA...");
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        cmd.execute_command(Opcode::CloseHca, 0, 0, 0)?;
+        self.initialized = false;
+        trace!("HCA closed successfully");
+        Ok(())
+    }
+}
+
+impl Drop for Hca {
+    fn drop(&mut self) {
+        if self.initialized {
+            panic!("please close instead of dropping")
+        }
+    }
 }

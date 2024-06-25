@@ -82,6 +82,9 @@ impl ConnectX3Nic {
         let icm_aux_area = firmware_area.map_icm_aux(config_regs, aux_pages)?;
         nic.icm_tables = Some(icm_aux_area.map_icm_tables(config_regs, &profile, &caps)?);
         nic.hca = Some(profile.init_hca.init_hca(config_regs)?);
+        let hca = nic.hca.as_ref().unwrap();
+        // give us the interrupt pin
+        hca.query_adapter(config_regs)?;
 
         todo!()
     }

@@ -730,6 +730,17 @@ impl Hca {
         trace!("HCA closed successfully");
         Ok(())
     }
+
+    pub(super) fn query_adapter(
+        &self, config_regs: &mut MappedPages,
+    ) -> Result<Adapter, &'static str> {
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        let (pages, physical) = create_contiguous_mapping(size_of::<Adapter>(), DMA_FLAGS)?;
+        cmd.execute_command(Opcode::QueryAdapter, 0, 0, physical.value() as u64)?;
+        Ok(Adapter::from_bytes(pages.as_slice(
+            0, size_of::<Adapter>(),
+        )?.try_into().unwrap()))
+    }
 }
 
 impl Drop for Hca {
@@ -738,4 +749,31 @@ impl Drop for Hca {
             panic!("please close instead of dropping")
         }
     }
+}
+
+#[bitfield]
+pub(super) struct Adapter {
+    #[skip] __: u128,
+    /// When PCIe interrupt messages are being used, this value is used for
+    /// clearing an interrupt. To clear an interrupt, the driver should write
+    /// the value (1<<intapin) into the clr_int register. When using an MSI-X,
+    /// this register is not used.
+    inta_pin: u8,
+    #[skip] __: B24,
+    // skip 58 u32
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u64
 }

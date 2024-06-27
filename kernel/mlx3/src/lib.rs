@@ -8,6 +8,7 @@ extern crate alloc;
 
 mod cmd;
 mod device;
+mod event_queue;
 mod fw;
 mod icm;
 mod mcg;
@@ -15,6 +16,7 @@ mod profile;
 
 #[macro_use] extern crate log;
 
+use event_queue::{init_eqs, Offsets};
 use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
@@ -53,7 +55,9 @@ impl ConnectX3Nic {
         // map the Global Device Configuration registers
         let mut config_regs = mlx3_pci_dev.pci_map_bar_mem(0)?;
         trace!("mlx3 configuration registers: {:?}", config_regs);
-        // TODO: there's also the User Access Region in BAR 2
+        // map the User Access Region
+        let mut user_access_region = mlx3_pci_dev.pci_map_bar_mem(2)?;
+        trace!("mlx3 user access region: {:?}", user_access_region);
 
         ResetRegisters::reset(mlx3_pci_dev, &mut config_regs)?;
 
@@ -77,6 +81,7 @@ impl ConnectX3Nic {
         firmware_area.run(config_regs)?;
         let caps = firmware_area.query_capabilities(config_regs)?;
         // In the Nautilus driver, some of the port setup already happens here.
+        let mut offsets = Offsets::init(&caps);
         let mut profile = Profile::new(&caps)?;
         let aux_pages = firmware_area.set_icm(config_regs, profile.total_size)?;
         let icm_aux_area = firmware_area.map_icm_aux(config_regs, aux_pages)?;
@@ -85,6 +90,11 @@ impl ConnectX3Nic {
         let hca = nic.hca.as_ref().unwrap();
         // give us the interrupt pin
         hca.query_adapter(config_regs)?;
+        let memory_regions = nic.icm_tables.as_mut().unwrap().memory_regions();
+        let eqs = init_eqs(
+            config_regs, &mut user_access_region, &caps, &mut offsets,
+            memory_regions,
+        )?;
 
         todo!()
     }

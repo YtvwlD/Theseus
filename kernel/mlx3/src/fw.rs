@@ -9,6 +9,8 @@ use zerocopy::{FromBytes, U16, U64};
 
 use crate::{cmd::{CommandMailBox, Opcode}, icm::MappedIcmAuxiliaryArea};
 
+pub(super) const PAGE_SHIFT: u8 = 12;
+
 #[derive(Clone, FromBytes)]
 #[repr(C, packed)]
 pub(super) struct Firmware {
@@ -234,7 +236,7 @@ pub(super) struct Capabilities {
     #[skip] __: B4,
     log_max_eec: B4,
     // deprecated
-    num_rsvd_eqs: u8,
+    pub(super) num_rsvd_eqs: u8,
     log_max_cq_sz: u8,
     #[skip] __: B4,
     pub(super) log2_rsvd_cqs: B4,
@@ -566,7 +568,6 @@ impl InitHcaParameters {
         &mut self, config_regs: &mut MappedPages,
     ) -> Result<Hca, &'static str> {
         const DEFAULT_UAR_PAGE_SHIFT: u8 = 12;
-        const PAGE_SHIFT: u8 = 12;
 
         // set the needed values
         self.set_version(2); // version must be 2

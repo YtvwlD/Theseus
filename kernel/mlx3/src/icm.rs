@@ -2,6 +2,7 @@ use core::mem::size_of;
 
 use alloc::vec::Vec;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
+use modular_bitfield_msb::bitfield;
 
 use crate::{cmd::{CommandMailBox, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile};
 
@@ -93,6 +94,8 @@ impl MappedIcmAuxiliaryArea {
                 config_regs, caps.d_mpt_entry_sz(), profile.num_mpts,
                 1 << caps.log2_rsvd_mrws(), profile.init_hca.tpt_dmpt_base(),
             )?,
+            reserved_mtts,
+            offset: 0,
         };
         let qp_table = QpTable {
             table: self.init_icm_table(
@@ -237,10 +240,54 @@ struct SrqTable {
     cmpt_table: IcmTable,
 }
 
-struct MrTable {
+pub(super) struct MrTable {
     mtt_table: IcmTable,
     dmpt_table: IcmTable,
+    reserved_mtts: usize,
+    offset: usize,
     // TODO
+}
+impl MrTable {
+    /// Allocate MTT entries for an existing buffer.
+    // TODO: move buffer creation here, perhaps?
+    pub(crate) fn alloc_mtt(
+        &mut self, config_regs: &mut MappedPages, caps: &Capabilities,
+        num_entries: usize, buf: PhysicalAddress,
+    ) -> Result<usize, &'static str> {
+        // get the next free entry
+        let addr = (
+            self.reserved_mtts + self.offset
+        ) * caps.mtt_entry_sz() as usize;
+        self.offset += num_entries;
+        
+        // send it to the card
+        const MTT_FLAG_PRESENT: u64 = 1;
+        let mut cmd = CommandMailBox::new(config_regs)?;
+        let (mut pages, physical) = create_contiguous_mapping(
+            size_of::<WriteMttCommand>(), DMA_FLAGS,
+        )?;
+        let bytes = pages.as_slice_mut(0, size_of::<WriteMttCommand>())?;
+        // TODO: we can speed this up by passing page-sized chunks, see the Nautilus driver
+        for idx in 0..num_entries {
+            let mut write_cmd = WriteMttCommand::new();
+            write_cmd.set_offset((addr + idx) as u64);
+            write_cmd.set_entry((buf.value() + idx * PAGE_SIZE) as u64 | MTT_FLAG_PRESENT);
+            bytes.copy_from_slice(&write_cmd.into_bytes());
+            cmd.execute_command(Opcode::WriteMtt, physical.value() as u64, 1, 0)?;
+        }
+        Ok(addr)
+    }
+}
+
+/// the struct passed to WriteMtt
+#[bitfield]
+struct WriteMttCommand {
+    offset: u64,
+    #[skip] __: u64,
+    // TODO: support multiple entries
+    /// the physical address, except for the last three bits
+    /// (those must be zero); the last bit is the present bit
+    entry: u64,
 }
 
 /// An ICM mapping.
@@ -353,5 +400,10 @@ impl MappedIcmTables {
         }
         trace!("successfully unmapped ICM tables");
         Ok(())
+    }
+    
+    // Get the memory regions table.
+    pub(crate) fn memory_regions(&mut self) -> &mut MrTable {
+        self.mr_table.as_mut().unwrap()
     }
 }

@@ -40,7 +40,19 @@ pub(super) enum Opcode {
     MapFa = 0xfff,
 
     // TPT commands
+    Sw2HwMpt = 0x0d,
+    QueryMpt = 0x0e,
+    Hw2SwMpt = 0x0f,
+    ReadMtt = 0x10,
+    WriteMtt = 0x11,
+
     // EQ commands
+    MapEq = 0x12,
+    Sw2HwEq = 0x13,
+    Hw2SwEq = 0x14,
+    QueryEq = 0x15,
+    GenEqe = 0x58,
+
     // CQ commands
     // QP/EE commands
     // special QP and management commands

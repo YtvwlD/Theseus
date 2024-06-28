@@ -4,6 +4,7 @@
 use byteorder::BigEndian;
 use memory::MappedPages;
 use num_enum_derive::IntoPrimitive;
+use strum_macros::{FromRepr, IntoStaticStr};
 use volatile::{Volatile, WriteOnly};
 use zerocopy::{FromBytes, U32, U64};
 
@@ -87,7 +88,7 @@ impl<'a> CommandMailBox<'a> {
     pub(super) fn execute_command(
         &mut self, opcode: Opcode,
         input: u64, input_modifier: u32, output: u64,
-    ) -> Result<u64, &'static str> {
+    ) -> Result<u64, ReturnStatus> {
         // TODO: timeout
 
         // wait until the previous command is done
@@ -112,11 +113,16 @@ impl<'a> CommandMailBox<'a> {
         // poll for it
         while self.is_pending() {}
 
-        // read the result
-        match self.hcr.status_opcode.read().get() >> 24 {
-            0 => Ok(self.hcr.out_param.read().get()),
-            // TODO: interpret the number
-            _ => Err("Status failed with error"),
+        // check the status
+        let status = ReturnStatus::from_repr(
+            self.hcr.status_opcode.read().get() >> 24
+        ).expect("return status invalid");
+        trace!("status: {status:?}");
+        match status {
+            // on success, return the result
+            ReturnStatus::Ok => Ok(self.hcr.out_param.read().get()),
+            // else, return the status
+            err => Err(err),
         }
     }
 
@@ -127,4 +133,33 @@ impl<'a> CommandMailBox<'a> {
     }
 }
 
+#[repr(u32)]
+#[derive(Debug, FromRepr, IntoStaticStr)]
+pub(super) enum ReturnStatus {
+    // general
+    Ok = 0x00,
+    InternalErr = 0x01,
+    BadOp = 0x02,
+    BadParam = 0x03,
+    BadSysState = 0x04,
+    BadResource = 0x05,
+    ResourceBusy = 0x06,
+    ExceedLim = 0x08,
+    BadResState = 0x09,
+    BadIndex = 0x0a,
+    BadNvmem = 0x0b,
+    IcmError = 0x0c,
+    BadPerm = 0x0d,
 
+    // QP state
+    BadQpState = 0x10,
+
+    // TPT
+    RegBound = 0x21,
+
+    // MAD
+    BadPkt = 0x30,
+
+    // CQ
+    BadSize = 0x40,
+}

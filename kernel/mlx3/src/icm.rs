@@ -6,6 +6,8 @@ use modular_bitfield_msb::bitfield;
 
 use crate::{cmd::{CommandMailBox, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile};
 
+pub(super) const ICM_PAGE_SHIFT: u8 = 12;
+
 #[repr(u64)]
 #[derive(Default, Clone, Copy)]
 enum CmptType {
@@ -324,7 +326,7 @@ impl MappedIcm {
         let mut phys_pointer = physical;
         let mut virt_pointer = card_virtual;
         for _ in 0..count {
-            vpm.physical_address.set(phys_pointer.value().try_into().unwrap());
+            vpm.physical_address.set(phys_pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
             vpm.virtual_address.set(virt_pointer);
             cmd.execute_command(
                 Opcode::MapIcm, vpm_physical.value() as u64, 1, 0,

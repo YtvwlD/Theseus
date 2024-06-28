@@ -7,7 +7,7 @@ use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS,
 use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, B2, B20, B22, B24, B25, B27, B3, B31, B36, B4, B42, B45, B5, B6, B63, B7, B72, B88, B91}};
 use zerocopy::{FromBytes, U16, U64};
 
-use crate::{cmd::{CommandMailBox, Opcode}, icm::MappedIcmAuxiliaryArea};
+use crate::{cmd::{CommandMailBox, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
 
 pub(super) const PAGE_SHIFT: u8 = 12;
 
@@ -62,7 +62,7 @@ impl Firmware {
         let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
         let mut pointer = physical;
         for _ in 0..count {
-            vpm.physical_address.set(pointer.value().try_into().unwrap());
+            vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
             cmd.execute_command(
                 Opcode::MapFa, vpm_physical.value() as u64, 1, 0,
             )?;
@@ -198,7 +198,7 @@ impl MappedFirmwareArea {
         let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
         let mut pointer = physical;
         for _ in 0..count {
-            vpm.physical_address.set(pointer.value().try_into().unwrap());
+            vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
             cmd.execute_command(
                 Opcode::MapIcmAux, vpm_physical.value() as u64, 1, 0,
             )?;

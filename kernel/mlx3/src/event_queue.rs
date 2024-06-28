@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
 
-use crate::cmd::{CommandMailBox, Opcode};
+use crate::{cmd::{CommandMailBox, Opcode}, icm::ICM_PAGE_SHIFT};
 
 use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
 
@@ -61,7 +61,6 @@ impl EventQueue {
         const EQ_STATUS_OK: u8 = 0;
         const EQ_STATE_ARMED: u8 = 9;
         const EQ_STATE_FIRED: u8 = 0xa;
-        const ICM_PAGE_SHIFT: u8 = 12;
         let number = offsets.alloc_eqn();
         let num_entries = 4096; // NUM_ASYNC_EQE + NUM_SPARE_EQE
         let consumer_index = 0;

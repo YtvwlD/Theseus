@@ -33,7 +33,7 @@ impl MappedIcmAuxiliaryArea {
         cmd.execute_command(Opcode::UnmapIcmAux, (), 0)?;
         trace!("successfully unmapped ICM auxiliary area");
         // actually free the memory
-        self.memory.take();
+        self.memory.take().unwrap();
         Ok(())
     }
     
@@ -333,7 +333,7 @@ impl MappedIcm {
             Opcode::UnmapIcm, self.card_virtual, self.num_pages,
         )?;
         // actually free the memory
-        self.memory.take();
+        self.memory.take().unwrap();
         Ok(())
     }
 }

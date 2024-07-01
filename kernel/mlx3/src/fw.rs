@@ -143,7 +143,7 @@ impl MappedFirmwareArea {
         cmd.execute_command(Opcode::UnmapFa, (), 0)?;
         trace!("successfully unmapped firmware area");
         // actually free the memory
-        self.memory.take();
+        self.memory.take().unwrap();
         Ok(())
     }
     

@@ -16,8 +16,9 @@ mod profile;
 
 #[macro_use] extern crate log;
 
+use alloc::vec::Vec;
 use cmd::CommandInterface;
-use event_queue::{init_eqs, Offsets};
+use event_queue::{init_eqs, EventQueue, Offsets};
 use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
@@ -39,6 +40,7 @@ pub struct ConnectX3Nic {
     firmware_area: Option<MappedFirmwareArea>,
     icm_tables: Option<MappedIcmTables>,
     hca: Option<Hca>,
+    eqs: Vec<EventQueue>,
 }
 
 /// Functions that setup the struct.
@@ -77,6 +79,7 @@ impl ConnectX3Nic {
             firmware_area: Some(firmware_area),
             icm_tables: None,
             hca: None,
+            eqs: Vec::new(),
         };
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
         let firmware_area = nic.firmware_area.as_mut().unwrap();
@@ -93,10 +96,10 @@ impl ConnectX3Nic {
         // give us the interrupt pin
         hca.query_adapter(&mut command_interface)?;
         let memory_regions = nic.icm_tables.as_mut().unwrap().memory_regions();
-        let eqs = init_eqs(
+        nic.eqs.append(&mut init_eqs(
             &mut command_interface, &mut user_access_region, &caps, &mut offsets,
             memory_regions,
-        )?;
+        )?);
 
         todo!()
     }
@@ -106,6 +109,11 @@ impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
         let mut cmd = CommandInterface::new(&mut self.config_regs)
             .expect("failed to get command interface");
+        while let Some(eq) = self.eqs.pop() {
+            eq
+                .destroy(&mut cmd)
+                .unwrap()
+        }
         if let Some(hca) = self.hca.take() {
             hca
                 .close(&mut cmd)

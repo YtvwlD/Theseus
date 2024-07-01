@@ -36,8 +36,7 @@ pub(super) struct EventQueue {
     number: usize,
     num_entries: usize,
     num_pages: usize,
-    pages: MappedPages,
-    physical: PhysicalAddress,
+    memory: Option<(MappedPages, PhysicalAddress)>,
     mtt: usize,
     doorbell: VirtualAddress,
     consumer_index: usize,
@@ -71,7 +70,7 @@ impl EventQueue {
         if num_pages == 0 {
             num_pages = 1;
         }
-        let (pages, physical) = create_contiguous_mapping(
+        let memory = create_contiguous_mapping(
             num_pages * PAGE_SIZE + EQE_SIZE - 1, DMA_FLAGS,
         )?;
         // this assumes we only have *one* EQ which is not a reserved eq!
@@ -81,7 +80,7 @@ impl EventQueue {
             .ok_or("failed to get UAR")?;
         let doorbell = uar_map + (0x800 + 8 * (number % 4));
         // TODO: pass pages here
-        let mtt = memory_regions.alloc_mtt(cmd, caps, num_pages, physical)?;
+        let mtt = memory_regions.alloc_mtt(cmd, caps, num_pages, memory.1)?;
         // TODO: register interrupt correctly
         // TODO: Should use MSI-X instead of legacy INTs
         let intr_vector = base_vector.and_then(|_| todo!());
@@ -106,7 +105,7 @@ impl EventQueue {
 
         let async_ev_mask = AsyncEventMask::empty();
         let eq = Self {
-            number, num_entries, num_pages, pages, physical, mtt, doorbell,
+            number, num_entries, num_pages, memory: Some(memory), mtt, doorbell,
             consumer_index, intr_vector, base_vector, uar_map, async_ev_mask,
         };
         trace!("created new EQ: {:?}", eq);
@@ -125,11 +124,41 @@ impl EventQueue {
         )?;
         Ok(())
     }
+
+    /// Unmap all events from this EQ.
+    fn unmap(&mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
+        let unmap = true;
+        cmd.execute_command(
+            Opcode::MapEq, self.async_ev_mask.bits(),
+            ((unmap as u32) << 31) | u32::try_from(self.number).unwrap(),
+        )?;
+        self.async_ev_mask = AsyncEventMask::empty();
+        Ok(())
+    }
+
+
+    /// Destroy the event queue.
+    pub(super) fn destroy(
+        mut self, cmd: &mut CommandInterface,
+    ) -> Result<(), &'static str> {
+        if !self.async_ev_mask.is_empty() {
+            self.unmap(cmd)?;
+        }
+        cmd.execute_command(
+            Opcode::Hw2SwEq, 0, self.number.try_into().unwrap(),
+        )?;
+        // actually free the memory
+        self.memory.take().unwrap();
+        Ok(())
+    }
+
 }
 
 impl Drop for EventQueue {
     fn drop(&mut self) {
-        todo!()
+        if self.memory.is_some() {
+            panic!("please destroy instead of dropping")
+        }
     }
 }
 

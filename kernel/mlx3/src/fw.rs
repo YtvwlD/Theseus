@@ -5,9 +5,9 @@ use core::mem::size_of;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, B2, B20, B22, B24, B25, B27, B3, B31, B36, B4, B42, B45, B5, B6, B63, B7, B72, B88, B91}};
-use zerocopy::{FromBytes, U16, U64};
+use zerocopy::{AsBytes, FromBytes, U16, U64};
 
-use crate::{cmd::{CommandMailBox, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
+use crate::{cmd::{CommandInterface, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
 
 pub(super) const PAGE_SHIFT: u8 = 12;
 
@@ -27,23 +27,19 @@ pub(super) struct Firmware {
 }
 
 impl Firmware {
-    pub(super) fn query(config_regs: &mut MappedPages) -> Result<Self, &'static str> {
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        // TODO: this should not be in high memory (?)
-        let (pages, physical) = create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)?;
-        trace!("asking the card to put information about its firmware into {pages:?}@{physical}...");
-        cmd.execute_command(Opcode::QueryFw, 0, 0, physical.value() as u64)?;
-        let mut fw = pages.as_type::<Firmware>(0)?.clone();
+    pub(super) fn query(cmd: &mut CommandInterface) -> Result<Self, &'static str> {
+        trace!("asking the card to provide information about its firmware...");
+        let page: MappedPages = cmd.execute_command(Opcode::QueryFw, (), 0)?;
+        let mut fw = page.as_type::<Firmware>(0)?.clone();
         fw.clr_int_bar = (fw.clr_int_bar >> 6) * 2;
         trace!("got firmware info: {fw:?}");
         Ok(fw)
     }
     
-    pub(super) fn map_area(self, config_regs: &mut MappedPages) -> Result<MappedFirmwareArea, &'static str> {
+    pub(super) fn map_area(self, cmd: &mut CommandInterface) -> Result<MappedFirmwareArea, &'static str> {
         const MAX_CHUNK_LOG2: u32 = 18;
         trace!("mapping firmware area...");
 
-        let mut cmd = CommandMailBox::new(config_regs)?;
         let size = PAGE_SIZE * usize::from(self.pages);
         let (pages, physical) = create_contiguous_mapping(size, DMA_FLAGS)?;
         let mut align = physical.value().trailing_zeros();
@@ -58,14 +54,11 @@ impl Firmware {
         }
         // TODO: we can batch as many vpm entries as fit in a mailbox (1 page)
         // rather than 1 chunk per mailbox, this will make bootup faster
-        let (mut vpm_pages, vpm_physical) = create_contiguous_mapping(size_of::<VirtualPhysicalMapping>(), DMA_FLAGS)?;
-        let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
+        let mut vpm = VirtualPhysicalMapping::default();
         let mut pointer = physical;
         for _ in 0..count {
             vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            cmd.execute_command(
-                Opcode::MapFa, vpm_physical.value() as u64, 1, 0,
-            )?;
+            cmd.execute_command(Opcode::MapFa, vpm.as_bytes(), 1)?;
             pointer += 1 << align;
         }
         trace!("mapped {} pages for firmware area", self.pages);
@@ -95,7 +88,7 @@ impl core::fmt::Debug for Firmware {
 }
 
 
-#[derive(Clone, FromBytes, Default)]
+#[derive(Clone, AsBytes, Default)]
 #[repr(C, packed)]
 pub(super) struct VirtualPhysicalMapping {
     // actually just 52 bits
@@ -113,18 +106,15 @@ pub(super) struct MappedFirmwareArea {
 }
 
 impl MappedFirmwareArea {
-    pub(super) fn run(&self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::RunFw, 0, 0, 0)?;
+    pub(super) fn run(&self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
+        cmd.execute_command(Opcode::RunFw, (), 0)?;
         trace!("successfully run firmware");
         Ok(())
     }
 
-     pub(super) fn query_capabilities(&self, config_regs: &mut MappedPages) -> Result<Capabilities, &'static str> {
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        let (pages, physical) = create_contiguous_mapping(size_of::<Capabilities>(), DMA_FLAGS)?;
-        cmd.execute_command(Opcode::QueryDevCap, 0, 0, physical.value() as u64)?;
-        let mut caps = Capabilities::from_bytes(pages.as_slice(
+     pub(super) fn query_capabilities(&self, cmd: &mut CommandInterface) -> Result<Capabilities, &'static str> {
+        let page: MappedPages = cmd.execute_command(Opcode::QueryDevCap, (), 0)?;
+        let mut caps = Capabilities::from_bytes(page.as_slice(
             0, size_of::<Capabilities>()
         )?.try_into().unwrap());
         // each UAR has 4 EQ doorbells; so if a UAR is reserved,
@@ -143,15 +133,14 @@ impl MappedFirmwareArea {
     }
     
     /// Unmaps the area from the card. Further usage requires a software reset.
-    pub(super) fn unmap(mut self, config_regs: &mut MappedPages) -> Result<(), &'static str> {
+    pub(super) fn unmap(mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
         if let Some(icm_aux_area) = self.icm_aux_area.take() {
             icm_aux_area
-                .unmap(config_regs)
+                .unmap(cmd)
                 .unwrap()
         }
         trace!("unmapping firmware area...");
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::UnmapFa, 0, 0, 0)?;
+        cmd.execute_command(Opcode::UnmapFa, (), 0)?;
         trace!("successfully unmapped firmware area");
         // actually free the memory
         self.memory.take();
@@ -161,9 +150,8 @@ impl MappedFirmwareArea {
     /// Set the ICM size.
     /// 
     /// Returns `aux_pages`, the auxiliary ICM size in pages.
-    pub(crate) fn set_icm(&self, config_regs: &mut MappedPages, icm_size: u64) -> Result<u64, &'static str> {
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        let aux_pages = cmd.execute_command(Opcode::SetIcmSize, icm_size, 0, 0)?;
+    pub(crate) fn set_icm(&self, cmd: &mut CommandInterface, icm_size: u64) -> Result<u64, &'static str> {
+        let aux_pages = cmd.execute_command(Opcode::SetIcmSize, icm_size, 0)?;
         // TODO: round up number of system pages needed if ICM_PAGE_SIZE < PAGE_SIZE
         trace!("ICM auxilliary area requires {aux_pages} 4K pages");
         Ok(aux_pages)
@@ -171,14 +159,13 @@ impl MappedFirmwareArea {
 
     /// Map the ICM auxiliary area.
     pub(super) fn map_icm_aux(
-        &mut self, config_regs: &mut MappedPages, aux_pages: u64,
+        &mut self, cmd: &mut CommandInterface, aux_pages: u64,
     ) -> Result<&MappedIcmAuxiliaryArea, &'static str> {
         if self.icm_aux_area.is_some() {
             return Err("ICM auxiliary area has already been mapped");
         }
         // TODO: merge this with Firmware::map_area?
         trace!("mapping ICM auxiliary area...");
-        let mut cmd = CommandMailBox::new(config_regs)?;
         let (pages, physical) = create_contiguous_mapping(
             aux_pages as usize * PAGE_SIZE, DMA_FLAGS,
         )?;
@@ -194,14 +181,11 @@ impl MappedFirmwareArea {
         }
         // TODO: we can batch as many vpm entries as fit in a mailbox (1 page)
         // rather than 1 chunk per mailbox, this will make bootup faster
-        let (mut vpm_pages, vpm_physical) = create_contiguous_mapping(size_of::<VirtualPhysicalMapping>(), DMA_FLAGS)?;
-        let vpm: &mut VirtualPhysicalMapping = vpm_pages.as_type_mut(0)?;
+        let mut vpm = VirtualPhysicalMapping::default();
         let mut pointer = physical;
         for _ in 0..count {
             vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            cmd.execute_command(
-                Opcode::MapIcmAux, vpm_physical.value() as u64, 1, 0,
-            )?;
+            cmd.execute_command(Opcode::MapIcmAux, vpm.as_bytes(), 1)?;
             pointer += 1 << align;
         }
         trace!("mapped {} pages for ICM auxiliary area", aux_pages);
@@ -565,7 +549,7 @@ pub(super) struct InitHcaParameters {
 
 impl InitHcaParameters {
     pub(super) fn init_hca(
-        &mut self, config_regs: &mut MappedPages,
+        &mut self, cmd: &mut CommandInterface,
     ) -> Result<Hca, &'static str> {
         const DEFAULT_UAR_PAGE_SHIFT: u8 = 12;
 
@@ -580,11 +564,7 @@ impl InitHcaParameters {
         self.set_uar_log_sz(DEFAULT_UAR_PAGE_SHIFT - PAGE_SHIFT);
         
         // execute the command
-        let (mut pages, physical) = create_contiguous_mapping(size_of::<Self>(), DMA_FLAGS)?;
-        let slice = pages.as_slice_mut(0, size_of::<Self>())?;
-        slice.copy_from_slice(&self.bytes);
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::InitHca, physical.value() as u64, 0, 0)?;
+        cmd.execute_command(Opcode::InitHca, &self.bytes[..], 0)?;
         trace!("HCA initialized");
         Ok(Hca { initialized: true, })
     }
@@ -722,23 +702,22 @@ pub(super) struct Hca {
 
 impl Hca {
     pub(super) fn close(
-        mut self, config_regs: &mut MappedPages,
+        mut self, cmd: &mut CommandInterface,
     ) -> Result<(), &'static str> {
         trace!("Closing HCA...");
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        cmd.execute_command(Opcode::CloseHca, 0, 0, 0)?;
+        cmd.execute_command(Opcode::CloseHca, (), 0)?;
         self.initialized = false;
         trace!("HCA closed successfully");
         Ok(())
     }
 
     pub(super) fn query_adapter(
-        &self, config_regs: &mut MappedPages,
+        &self, cmd: &mut CommandInterface,
     ) -> Result<Adapter, &'static str> {
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        let (pages, physical) = create_contiguous_mapping(size_of::<Adapter>(), DMA_FLAGS)?;
-        cmd.execute_command(Opcode::QueryAdapter, 0, 0, physical.value() as u64)?;
-        Ok(Adapter::from_bytes(pages.as_slice(
+        let page: MappedPages = cmd.execute_command(
+            Opcode::QueryAdapter, (), 0,
+        )?;
+        Ok(Adapter::from_bytes(page.as_slice(
             0, size_of::<Adapter>(),
         )?.try_into().unwrap()))
     }

@@ -16,6 +16,7 @@ mod profile;
 
 #[macro_use] extern crate log;
 
+use cmd::CommandInterface;
 use event_queue::{init_eqs, Offsets};
 use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
@@ -68,31 +69,32 @@ impl ConnectX3Nic {
         mlx3_pci_dev.pci_set_command_bus_master_bit();
 
         Ownership::get(&config_regs)?;
-        let firmware = Firmware::query(&mut config_regs)?;
-        let firmware_area = firmware.map_area(&mut config_regs)?;
+        let mut command_interface = CommandInterface::new(&mut config_regs)?;
+        let firmware = Firmware::query(&mut command_interface)?;
+        let firmware_area = firmware.map_area(&mut command_interface)?;
         let mut nic = Self {
             config_regs,
             firmware_area: Some(firmware_area),
             icm_tables: None,
             hca: None,
         };
+        let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
         let firmware_area = nic.firmware_area.as_mut().unwrap();
-        let config_regs = &mut nic.config_regs;
-        firmware_area.run(config_regs)?;
-        let caps = firmware_area.query_capabilities(config_regs)?;
+        firmware_area.run(&mut command_interface)?;
+        let caps = firmware_area.query_capabilities(&mut command_interface)?;
         // In the Nautilus driver, some of the port setup already happens here.
         let mut offsets = Offsets::init(&caps);
         let mut profile = Profile::new(&caps)?;
-        let aux_pages = firmware_area.set_icm(config_regs, profile.total_size)?;
-        let icm_aux_area = firmware_area.map_icm_aux(config_regs, aux_pages)?;
-        nic.icm_tables = Some(icm_aux_area.map_icm_tables(config_regs, &profile, &caps)?);
-        nic.hca = Some(profile.init_hca.init_hca(config_regs)?);
+        let aux_pages = firmware_area.set_icm(&mut command_interface, profile.total_size)?;
+        let icm_aux_area = firmware_area.map_icm_aux(&mut command_interface, aux_pages)?;
+        nic.icm_tables = Some(icm_aux_area.map_icm_tables(&mut command_interface, &profile, &caps)?);
+        nic.hca = Some(profile.init_hca.init_hca(&mut command_interface)?);
         let hca = nic.hca.as_ref().unwrap();
         // give us the interrupt pin
-        hca.query_adapter(config_regs)?;
+        hca.query_adapter(&mut command_interface)?;
         let memory_regions = nic.icm_tables.as_mut().unwrap().memory_regions();
         let eqs = init_eqs(
-            config_regs, &mut user_access_region, &caps, &mut offsets,
+            &mut command_interface, &mut user_access_region, &caps, &mut offsets,
             memory_regions,
         )?;
 
@@ -102,19 +104,21 @@ impl ConnectX3Nic {
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
+        let mut cmd = CommandInterface::new(&mut self.config_regs)
+            .expect("failed to get command interface");
         if let Some(hca) = self.hca.take() {
             hca
-                .close(&mut self.config_regs)
+                .close(&mut cmd)
                 .unwrap()
         }
         if let Some(icm_tables) = self.icm_tables.take() {
             icm_tables
-                .unmap(&mut self.config_regs)
+                .unmap(&mut cmd)
                 .unwrap()
         }
         if let Some(firmware_area) = self.firmware_area.take() {
             firmware_area
-                .unmap(&mut self.config_regs)
+                .unmap(&mut cmd)
                 .unwrap()
         }
     }

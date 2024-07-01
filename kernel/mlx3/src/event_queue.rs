@@ -1,13 +1,11 @@
 //! This module consists of functions that create, work with and destroy event queues.
 //! Additionally it holds the interrupt handling function to consume EQEs.
 
-use core::mem::size_of;
-
 use alloc::vec::Vec;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
 
-use crate::{cmd::{CommandMailBox, Opcode}, icm::ICM_PAGE_SHIFT};
+use crate::{cmd::{CommandInterface, Opcode}, icm::ICM_PAGE_SHIFT};
 
 use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
 
@@ -15,7 +13,7 @@ use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
 /// This creates all of the EQs ahead of time,
 /// passes their ownership to the hardware and calls MapEq.
 pub(super) fn init_eqs(
-    config_regs: &mut MappedPages, user_access_region: &mut MappedPages,
+    cmd: &mut CommandInterface, user_access_region: &mut MappedPages,
     caps: &Capabilities, offsets: &mut Offsets, memory_regions: &mut MrTable,
 ) -> Result<Vec<EventQueue>, &'static str> {
     const NUM_EQS: usize = 1;
@@ -23,7 +21,7 @@ pub(super) fn init_eqs(
     for _ in 0..NUM_EQS {
         // TODO: use interrupts here
         let eq = EventQueue::new(
-            config_regs, user_access_region, caps, offsets, memory_regions, None,
+            cmd, user_access_region, caps, offsets, memory_regions, None,
         )?;
         eqs.push(eq);
     }
@@ -52,7 +50,7 @@ impl EventQueue {
     // Create a new event queue. If `base_vector` is given, it will be interrupt
     // driven, else it will be polled.
     fn new(
-        config_regs: &mut MappedPages, user_access_region: &mut MappedPages,
+        cmd: &mut CommandInterface, user_access_region: &mut MappedPages,
         caps: &Capabilities, offsets: &mut Offsets,
         memory_regions: &mut MrTable, base_vector: Option<u8>,
     ) -> Result<Self, &'static str> {
@@ -79,7 +77,7 @@ impl EventQueue {
             .ok_or("failed to get UAR")?;
         let doorbell = uar_map + (0x800 + 8 * (number % 4));
         // TODO: pass pages here
-        let mtt = memory_regions.alloc_mtt(config_regs, caps, num_pages, physical)?;
+        let mtt = memory_regions.alloc_mtt(cmd, caps, num_pages, physical)?;
         // TODO: register interrupt correctly
         // TODO: Should use MSI-X instead of legacy INTs
         let intr_vector = base_vector.and_then(|_| todo!());
@@ -97,16 +95,9 @@ impl EventQueue {
         }
         ctx.set_log_page_size(PAGE_SHIFT - ICM_PAGE_SHIFT);
         ctx.set_mtt_base_addr(mtt.try_into().unwrap());
-        let mut cmd = CommandMailBox::new(config_regs)?;
-        let (mut command_pages, command_physical) = create_contiguous_mapping(
-            size_of::<EventQueueContext>(), DMA_FLAGS,
-        )?;
-        command_pages.as_slice_mut(
-            0, size_of::<EventQueueContext>()
-        )?.copy_from_slice(&ctx.bytes);
         cmd.execute_command(
-            Opcode::Sw2HwEq, command_physical.value() as u64,
-            number.try_into().unwrap(), 0,
+            Opcode::Sw2HwEq, &ctx.bytes[..],
+            number.try_into().unwrap(),
         )?;
 
         let eq = Self {

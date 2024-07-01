@@ -2,7 +2,7 @@
 //! and getting output back from the hca during verb calls and functions to execute verb calls.
 
 use byteorder::BigEndian;
-use memory::MappedPages;
+use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use num_enum_derive::IntoPrimitive;
 use strum_macros::{FromRepr, IntoStaticStr};
 use volatile::{Volatile, WriteOnly};
@@ -60,7 +60,7 @@ pub(super) enum Opcode {
     // Ethernet specific commands
 }
 
-pub(super) struct CommandMailBox<'a> {
+pub(super) struct CommandInterface<'a> {
     hcr: &'a mut Hcr,
     exp_toggle: u32,
 }
@@ -78,7 +78,116 @@ struct Hcr {
     status_opcode: Volatile<U32<BigEndian>>,
 }
 
-impl<'a> CommandMailBox<'a> {
+type MailboxAllocation = Option<(MappedPages, PhysicalAddress)>;
+
+/// An input of a command.
+/// 
+/// This can be either `()` for commands that take no input,
+/// `u64` for commands that take immediate input or
+/// `&[u8]` for commands that take a mailbox.
+pub(super) trait InputParameter {
+    /// Possibly allocate.
+    /// 
+    /// This will do if the input is not a mailbox.
+    fn allocate(&self) -> MailboxAllocation;
+
+    /// Get the value as u64.
+    /// 
+    /// This is 0 for (), the value for u64 and the address of the allocated
+    /// page for &[u8].
+    fn as_param(&self, allocation: &MailboxAllocation) -> u64;
+}
+
+impl InputParameter for () {
+    fn allocate(&self) -> MailboxAllocation {
+        None
+    }
+    
+    fn as_param(&self, allocation: &MailboxAllocation) -> u64 {
+        assert!(allocation.is_none());
+        0
+    }
+}
+impl InputParameter for u64 {
+    fn allocate(&self) -> MailboxAllocation {
+        None
+    }
+    
+    fn as_param(&self, allocation: &MailboxAllocation) -> u64 {
+        assert!(allocation.is_none());
+        *self
+    }
+}
+impl InputParameter for &[u8] {
+    fn allocate(&self) -> MailboxAllocation {
+        let (mut page, physical) = create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)
+            .expect("failed to allocate memory");
+        page
+            .as_slice_mut(0, self.len())
+            .expect("failed to write to memory")
+            .copy_from_slice(self);
+        Some((page, physical))
+    }
+    
+    fn as_param(&self, allocation: &MailboxAllocation) -> u64 {
+        let (_page, address) = allocation.as_ref().unwrap();
+        address.value() as u64
+    }
+}
+
+
+/// An output of a command.
+/// 
+/// This can be either `()` for commands that produce no output,
+/// `u64` for commands that produce immediate input or
+/// `MappedPages` for commands that write to a mailbox.
+pub(super) trait OutputParameter {
+    /// Possibly allocate.
+    /// 
+    /// This will do if the output is not a mailbox.
+    fn allocate() -> MailboxAllocation;
+
+    /// Parse the result of a command's execution.
+    fn from_result(value: u64, output_allocation: MailboxAllocation) -> Self;
+}
+
+impl OutputParameter for () {
+    fn allocate() -> MailboxAllocation {
+        None
+    }
+    
+    fn from_result(_value: u64, output_allocation: MailboxAllocation) -> Self {
+        // one could think that value == 0, but that's not always the case
+        assert!(output_allocation.is_none());
+        ()
+    }
+}
+impl OutputParameter for u64 {
+    fn allocate() -> MailboxAllocation {
+        None
+    }
+    
+    fn from_result(value: u64, output_allocation: MailboxAllocation) -> Self {
+        assert!(output_allocation.is_none());
+        value
+    }
+}
+impl OutputParameter for MappedPages {
+    fn allocate() -> MailboxAllocation {
+        Some(
+            create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)
+                .expect("failed to allocate memory")
+        )
+    }
+    
+    fn from_result(_value: u64, output_allocation: MailboxAllocation) -> Self {
+        let (page, _physical) = output_allocation.unwrap();
+        // one could think that value == physical.value() but that's not the case
+        page
+    }
+}
+
+impl<'a> CommandInterface<'a> {
     pub(super) fn new(config_regs: &'a mut MappedPages) -> Result<Self, &'static str> {
         Ok(Self {
             hcr: config_regs.as_type_mut(HCR_BASE)?,
@@ -88,29 +197,37 @@ impl<'a> CommandMailBox<'a> {
 
     /// Post a command and wait for its completion.
     /// 
-    /// Input and output can be either 0 (for opcodes that take no input or
-    /// give no output), *physical* addresses (for opcodes that read from or
-    /// write to mailboxes) or integers (for opcodes the operate on immediate
-    /// values). Immediate outputs are also returned.
+    /// Input and output can be either `()` (for opcodes that take no input or
+    /// give no output), bytes / pages (for opcodes that read from or write to
+    /// mailboxes or u64 (for opcodes the operate on immediate values).
     /// 
     /// ## Safety
     /// 
-    /// This function does not check whether addresses are valid or whether
-    /// the specified opcode takes the provided type of input or output.
-    pub(super) fn execute_command(
+    /// This function does not check whether the specified opcode takes the
+    /// provided type of input or output.
+    pub(super) fn execute_command<I: InputParameter, O: OutputParameter>(
         &mut self, opcode: Opcode,
-        input: u64, input_modifier: u32, output: u64,
-    ) -> Result<u64, ReturnStatus> {
+        input: I, input_modifier: u32,
+    ) -> Result<O, ReturnStatus> {
         // TODO: timeout
+        trace!("executing command: {opcode:?}");
 
         // wait until the previous command is done
         while self.is_pending() {}
 
+        // allocate memory
+        let input_allocation = input.allocate();
+        let input_param = input.as_param(&input_allocation);
+        let output_allocation = O::allocate();
+        let output_param = if let Some((_, output_address)) = output_allocation {
+            output_address.value() as u64
+        } else {
+            0
+        };
         // post the command
-        trace!("executing command: {opcode:?}");
-        self.hcr.in_param.write(input.into());
+        self.hcr.in_param.write(input_param.into());
         self.hcr.in_mod.write(input_modifier.into());
-        self.hcr.out_param.write(output.into());
+        self.hcr.out_param.write(output_param.into());
         self.hcr.token.write((POLL_TOKEN << 16).into());
         // TODO: barrier?
         self.hcr.status_opcode.write((
@@ -132,7 +249,10 @@ impl<'a> CommandMailBox<'a> {
         trace!("status: {status:?}");
         match status {
             // on success, return the result
-            ReturnStatus::Ok => Ok(self.hcr.out_param.read().get()),
+            ReturnStatus::Ok => Ok(O::from_result(
+                self.hcr.out_param.read().get(),
+                output_allocation,
+            )),
             // else, return the status
             err => Err(err),
         }

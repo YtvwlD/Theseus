@@ -2,6 +2,7 @@
 //! Additionally it holds the interrupt handling function to consume EQEs.
 
 use alloc::vec::Vec;
+use bitflags::bitflags;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
 
@@ -25,7 +26,8 @@ pub(super) fn init_eqs(
         )?;
         eqs.push(eq);
     }
-    // TODO: call MapEq
+    // map all events to the first (and only) event queue
+    eqs[0].map(cmd)?;
     Ok(eqs)
 }
 
@@ -44,6 +46,8 @@ pub(super) struct EventQueue {
     /// IRQ we will see
     base_vector: Option<u8>,
     uar_map: VirtualAddress,
+    /// event bitmask
+    async_ev_mask: AsyncEventMask,
 }
 
 impl EventQueue {
@@ -100,12 +104,26 @@ impl EventQueue {
             number.try_into().unwrap(),
         )?;
 
+        let async_ev_mask = AsyncEventMask::empty();
         let eq = Self {
             number, num_entries, num_pages, pages, physical, mtt, doorbell,
-            consumer_index, intr_vector, base_vector, uar_map,
+            consumer_index, intr_vector, base_vector, uar_map, async_ev_mask,
         };
         trace!("created new EQ: {:?}", eq);
         Ok(eq)
+    }
+    
+    /// Map all event types to this EQ.
+    // TODO: should parameterize the types of events given to this EQ
+    fn map(&mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
+        // TODO: unmask IRQ
+        self.async_ev_mask = AsyncEventMask::all();
+        let unmap = false;
+        cmd.execute_command(
+            Opcode::MapEq, self.async_ev_mask.bits(),
+            ((unmap as u32) << 31) | u32::try_from(self.number).unwrap(),
+        )?;
+        Ok(())
     }
 }
 
@@ -139,6 +157,79 @@ struct EventQueueContext {
     #[skip] __: u8,
     producer_index: B24,
     #[skip] __: B96,
+}
+
+#[repr(u64)]
+enum EventType {
+    // completion
+    Completion = 0x00,
+
+    // IB affiliated events
+    PathMigrationSucceeded = 0x01,
+    CommunicationEstablished = 0x02,
+    SendQueueDrained = 0x03,
+    SrqLastWqe = 0x13,
+    SrqLimit = 0x14,
+
+    // QP affiliated errors
+    CqError = 0x04,
+    WqCatastrophicError = 0x05,
+    EecCatastrophicError = 0x06,
+    PathMigrationFailed = 0x07,
+    WqInvalidRequestError = 0x10,
+    WqAccessViolation = 0x11,
+    SrqCatastropicError = 0x12,
+
+    // unaffiliated events and errors
+    InternalError = 0x08,
+    PortChange = 0x09,
+    // EqOverflow = 0x0f,
+    // EccDetect = 0x0e,
+    // VepUpdate = 0x19,
+    // OpRequired = 0x1a,
+    FatalWarning = 0x1b,
+    FlrEvent = 0x1c,
+    PortManagementChange = 0x1d,
+    RecoverableEvent = 0x3e,
+    // None = 0xff,
+
+    // HCA interface
+    CommandInterfaceCompletion = 0x0a,
+    CommunicationChannelWritten = 0x18,
+
+}
+
+bitflags! {
+    #[derive(Debug)]
+    pub struct AsyncEventMask: u64 {
+        // IB affiliated
+        const PATH_MIGRATION_SUCCEEDED = 1 << EventType::PathMigrationSucceeded as u64;
+        const COMMUNICATION_ESTABLISHED = 1 << EventType::CommunicationEstablished as u64;
+        const SEND_QUEUE_DRAINED = 1 << EventType::SendQueueDrained as u64;
+        const SRQ_LAST_WQE = 1 << EventType::SrqLastWqe as u64;
+        const SRQ_LIMIT = 1 << EventType::SrqLimit as u64;
+        
+        // QP affiliated errors
+        const CQ_ERROR = 1 << EventType::CqError as u64;
+        const WQ_CATASTROPHIC_ERROR = 1 << EventType::WqCatastrophicError as u64;
+        const EEC_CATASTROPHIC_ERROR = 1 << EventType::EecCatastrophicError as u64;
+        const PATH_MIGRATION_FAILED = 1 << EventType::PathMigrationFailed as u64;
+        const WQ_INVALID_REQUEST_ERROR = 1 << EventType::WqInvalidRequestError as u64;
+        const WQ_ACCESS_VIOLATION = 1 << EventType::WqAccessViolation as u64;
+        const SRQ_CATASTROPHIC_ERROR = 1 << EventType::SrqCatastropicError as u64;
+
+        // unaffiliated events and errors
+        const INTERNAL_ERROR = 1 << EventType::InternalError as u64;
+        const PORT_CHANGE = 1 << EventType::PortChange as u64;
+        const FATAL_WARNING = 1 << EventType::FatalWarning as u64;
+        const FLR_EVENT = 1 << EventType::FlrEvent as u64;
+        const PORT_MANAGEMENT_CHANGE = 1 << EventType::PortManagementChange as u64;
+        const RECOVERABLE_EVENT = 1 << EventType::RecoverableEvent as u64;
+
+        // HCA interface
+        const COMMAND_INTERFACE_COMPLETION = 1 << EventType::CommandInterfaceCompletion as u64;
+        const COMMUNICATION_CHANNEL_WRITTEN = 1 << EventType::CommunicationChannelWritten as u64;
+    }
 }
 
 pub(super) struct Offsets {

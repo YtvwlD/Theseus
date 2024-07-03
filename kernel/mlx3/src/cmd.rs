@@ -122,6 +122,11 @@ impl InputParameter for &[u8] {
     fn allocate(&self) -> MailboxAllocation {
         let (mut page, physical) = create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)
             .expect("failed to allocate memory");
+        // zero the page
+        page
+            .as_slice_mut(0, PAGE_SIZE)
+            .expect("failed to write to memory")
+            .fill(0u8);
         page
             .as_slice_mut(0, self.len())
             .expect("failed to write to memory")
@@ -174,10 +179,14 @@ impl OutputParameter for u64 {
 }
 impl OutputParameter for MappedPages {
     fn allocate() -> MailboxAllocation {
-        Some(
-            create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)
-                .expect("failed to allocate memory")
-        )
+        let (mut page, physical) = create_contiguous_mapping(PAGE_SIZE, DMA_FLAGS)
+            .expect("failed to allocate memory");
+        // zero the page
+        page
+            .as_slice_mut(0, PAGE_SIZE)
+            .expect("failed to write to memory")
+            .fill(0u8);
+        Some((page, physical))
     }
     
     fn from_result(_value: u64, output_allocation: MailboxAllocation) -> Self {

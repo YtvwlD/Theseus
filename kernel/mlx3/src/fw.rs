@@ -272,14 +272,75 @@ pub(super) struct Capabilities {
     cq_timestamp: B1,
     #[skip] __: B15,
     // max_pkey?
-    ext_flags: u32,
-    cap_flags: u32,
+
+    // flags: u64,
+    #[skip] __: bool,
+    cqe_64b: bool,
+    eqe_64b: bool,
+    #[skip] __: bool,
+    port_mng_chg_ev: bool,
+    #[skip] __: B3,
+    sense_port: bool,
+    #[skip] __: bool,
+    set_eth_shed: bool,
+    rss_ip_frag: bool,
+    #[skip] __: B2,
+    ethernet_user_prio: bool,
+    counters: bool,
+    ptp1588: bool,
+    #[skip] __: B2,
+    ethertype_steer: bool,
+    vlan_steer: bool,
+    vep_mc_steer: bool,
+    vep_uc_steer: bool,
+    udp_rss: bool,
+    thermal_warning: bool,
+    wol_port2: bool,
+    wol_port1: bool,
+    header_split: bool,
+    #[skip] __: bool,
+    fcs_keep: bool,
+    mc_loopback: bool,
+    uc_loopback: bool,
+    fcoe_t11: bool,
+    roce: bool,
+    ipv6_checksum: bool,
+    ud_sw: bool,
+    #[skip] __: bool,
+    l2_multicast: bool,
+    router_mode: bool,
+    paging: bool,
+    #[skip] __: bool,
+    ud_mcast_ipv4: bool,
+    ud_mcast: bool,
+    avp: bool,
+    raw_mcast: bool,
+    atomic: bool,
+    apm: bool,
+    mem_window: bool,
+    blh: bool,
+    raw_ipv6: bool,
+    raw_ethertype: bool,
+    dpdp: bool,
+    fcoe: bool,
+    vmm: bool,
+    bad_qkey: bool,
+    bad_pkey: bool,
+    roce_checksum: bool,
+    srq: bool,
+    fcob: bool,
+    reliable_mc: bool,
+    xrc: bool,
+    ud: bool,
+    uc: bool,
+    rc: bool,
+
     num_rsvd_uars: B4,
     #[skip] __: B6,
     uar_sz: B6,
     #[skip] __: u8,
     log_page_sz: u8,
-    bf: B1,
+    bf: bool,
     #[skip] __: B10,
     log_bf_reg_sz: B5,
     #[skip] __: B2,
@@ -350,7 +411,7 @@ pub(super) struct Capabilities {
 
 impl Capabilities {
     fn bf_regs_per_page(&self) -> usize {
-        if self.bf() == 1 {
+        if self.bf() {
             if 1 << self.log_max_bf_regs_per_page() > PAGE_SIZE / self.bf_reg_size() {
                 3
             } else {
@@ -362,7 +423,7 @@ impl Capabilities {
     }
 
     fn bf_reg_size(&self) -> usize {
-        if self.bf() == 1 {
+        if self.bf() {
             1 << self.log_bf_reg_sz()
         } else {
             0
@@ -417,7 +478,53 @@ impl core::fmt::Debug for Capabilities {
             .field("Max RQ desc size", &self.max_desc_sz_rq())
             .field("max RQ S/G", &self.max_sg_rq())
             .field("Max Message Size", &(1 << self.log_max_msg()))
-            // TODO: dump flags
+            .field("Unicast loopback support", &self.uc_loopback())
+            .field("Multicast loopback support", &self.mc_loopback())
+            .field("Header-data split support", &self.header_split())
+            .field("Wake on LAN (port 1) support", &self.wol_port1())
+            .field("Wake on LAN (port 2) support", &self.wol_port2())
+            .field("Thermal warning event", &self.thermal_warning())
+            .field("UDP RSS support", &self.udp_rss())
+            .field("Unicast VEP steering support", &self.vep_uc_steer())
+            .field("Multicast VEP steering support", &self.vep_mc_steer())
+            .field("VLAN steering support", &self.vlan_steer())
+            .field("EtherType steering support", &self.ethertype_steer())
+            // WQE v1 support
+            .field("PTP1588 support", &self.ptp1588())
+            .field("QPC Ethernet user priority support", &self.ethernet_user_prio())
+            .field("64B EQE support", &self.eqe_64b())
+            .field("64B CQE support", &self.cqe_64b())
+            .field("RC transport support", &self.rc())
+            .field("UC transport support", &self.uc())
+            .field("UD transport support", &self.ud())
+            .field("XRC transport support", &self.xrc())
+            .field("Reliable Multicast support", &self.reliable_mc())
+            .field("FCoB support", &self.fcob())
+            .field("SRQ support", &self.srq())
+            .field("RoCE checksum support", &self.roce_checksum())
+            .field("Pkey Violation Counter support", &self.bad_pkey())
+            .field("Qkey Violation Counter support", &self.bad_qkey())
+            .field("VMM support", &self.vmm())
+            .field("FCoE support", &self.fcoe())
+            .field("DPDP support", &self.dpdp())
+            .field("Raw Ethertype support", &self.raw_ethertype())
+            .field("Raw IPv6 support", &self.raw_ipv6())
+            .field("LSO header support", &self.blh())
+            .field("Memory window support", &self.mem_window())
+            .field("Automatic Path Migration support", &self.apm())
+            .field("Atomic op support", &self.atomic())
+            .field("Raw multicast support", &self.raw_mcast())
+            .field("AVP support", &self.avp())
+            .field("UD Multicast support", &self.ud_mcast())
+            .field("UD IPv4 Multicast support", &self.ud_mcast_ipv4())
+            // DIF support
+            .field("Paging on Demand support", &self.paging())
+            .field("Router mode support", &self.router_mode())
+            .field("L2 Multicast support", &self.l2_multicast())
+            .field("UD transport SW parsing support", &self.ud_sw())
+            .field("TCP checksum support for IPv6 support", &self.ipv6_checksum())
+            .field("RoCE support", &self.roce())
+            .field("FCoE T11 frame support", &self.fcoe_t11())
             .finish()
     }
 }

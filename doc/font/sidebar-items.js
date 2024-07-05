@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHARACTER_HEIGHT","CHARACTER_WIDTH"],"static":["FONT_BASIC"]};

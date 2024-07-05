@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["configure_translation_registers","disable_mmu","enable_mmu","find_section_memory_bounds","get_p4","read_mmu_config","set_as_active_page_table_root","tlb_flush_by_theseus_asid","tlb_flush_virt_addr"],"macro":["asm_set_mmu_config_x2_x3"],"struct":["AggregatedSectionMemoryBounds","MmuConfig","SectionMemoryBounds"]};

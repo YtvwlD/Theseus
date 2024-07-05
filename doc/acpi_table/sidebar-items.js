@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["AcpiTables","TableLocation"],"type":["AcpiSignature"]};

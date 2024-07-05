@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SDT_SIZE_IN_BYTES"],"struct":["GenericAddressStructure","Sdt"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ignore_serial_port_input","start_connection_detection"]};

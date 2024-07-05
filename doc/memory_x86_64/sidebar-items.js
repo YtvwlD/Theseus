@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["find_section_memory_bounds","get_p4","get_vga_mem_addr","tlb_flush_all","tlb_flush_virt_addr"],"struct":["AggregatedSectionMemoryBounds","SectionMemoryBounds"],"trait":["BootInformation","ElfSection","Module"]};

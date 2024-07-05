@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PeekResult"],"mod":["mpsc_queue"],"struct":["DFQueue","DFQueueConsumer","DFQueueProducer","PeekedData","QueuedData"]};

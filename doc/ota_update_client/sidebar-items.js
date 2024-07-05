@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DIFF_FILE_NAME"],"enum":["CrateSet"],"fn":["as_lines","default_remote_endpoint","download_available_update_builds","download_crates","download_diff","download_listing","parse_diff_lines"],"struct":["Diff","DownloadedFile"]};

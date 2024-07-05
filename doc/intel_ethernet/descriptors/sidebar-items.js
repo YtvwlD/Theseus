@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RX_STATUS_DD","RX_STATUS_EOP","TX_CMD_DEXT","TX_CMD_EOP","TX_CMD_IC","TX_CMD_IDE","TX_CMD_IFCS","TX_CMD_RPS","TX_CMD_RS","TX_CMD_VLE","TX_DTYP_ADV","TX_PAYLEN_SHIFT","TX_STATUS_DD"],"struct":["AdvancedRxDescriptor","AdvancedTxDescriptor","LegacyRxDescriptor","LegacyTxDescriptor"],"trait":["RxDescriptor","TxDescriptor"]};

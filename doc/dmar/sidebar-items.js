@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DMAR_SIGNATURE"],"enum":["DmarEntry"],"fn":["handle"],"struct":["DeviceScopePath","Dmar","DmarAndd","DmarAtsr","DmarDeviceScope","DmarDrhd","DmarEntryRecord","DmarIter","DmarRhsa","DmarRmrr","DmarSatc","DrhdIter"]};

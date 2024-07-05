@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["init_device","storage_controllers","storage_devices"],"trait":["StorageController","StorageDevice"],"type":["StorageControllerRef","StorageDeviceRef"]};

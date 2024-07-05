@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["context_switch_regular","read_first_register"],"macro":["restore_registers_regular","save_registers_regular","switch_stacks"],"struct":["ContextRegular"]};

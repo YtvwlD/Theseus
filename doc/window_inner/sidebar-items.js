@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_BORDER_SIZE","DEFAULT_TITLE_BAR_HEIGHT"],"enum":["WindowMovingStatus"],"struct":["WindowInner"]};

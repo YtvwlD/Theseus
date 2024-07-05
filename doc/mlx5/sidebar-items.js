@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONNECTX5_DEV","CONNECTX5_EX_DEV","MLX_VEND"],"fn":["get_mlx5_nic"],"struct":["ConnectX5Nic"]};

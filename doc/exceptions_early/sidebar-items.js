@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["double_fault_handler","init"],"static":["EARLY_IDT"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AvailableSegmentSelector","Descriptor"],"fn":["create_and_load_tss_gdt","create_gdt"],"struct":["Gdt"]};

@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Management of two kernel personalities, one for SIMD-enabled code, and one for regular code. "><title>simd_personality - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-9ee3a5e31a2afa3e.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="simd_personality" data-themes="" data-resource-suffix="" data-rustdoc-version="1.75.0-nightly (aa1a71e9e 2023-10-26)" data-channel="nightly" data-search-js="search-8fbf244ebcf71464.js" data-settings-js="settings-74424d7eec62a23e.js" ><script src="../static.files/storage-fec3eaa3851e447d.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f34af1a0ee6bacd.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-5d8b3c7633ad77ba.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../simd_personality/index.html">simd_personality</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><ul class="block">
+            <li><a id="all-types" href="all.html">All Items</a></li></ul></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">simd_personality</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../src/simd_personality/lib.rs.html#1-209">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Management of two kernel personalities, one for SIMD-enabled code, and one for regular code. </p>
+<p>This crate is responsible for creating and managing multiple <code>CrateNamespace</code>s so that Theseus
+can run two instances of code side-by-side, like library OS-style personalities. 
+This crate itself is part of the regular non-SIMD world, not the SIMD world. </p>
+<p>There are two considerations here to ensure correctness by saving/restoring SIMD registers: 
+how to deal with it for context switching, and also for interrupt handling.
+Both of these policies are determined per-core as follows:</p>
+<h2 id="context-switching"><a href="#context-switching">Context Switching</a></h2>
+<ul>
+<li>If there is one or zero SIMD-enabled <code>Task</code>s running on a given core, 
+then all <code>Task</code>s running on that core can use the standard, 
+non-SIMD-enabled context switching routine. 
+This is because there is no need to save and restore SIMD registers (e.g., xmm),
+as only a single <code>Task</code> will ever use them. </li>
+<li>If there are multiple SIMD-enabled <code>Task</code>s running on a given core,
+then all of the SIMD <code>Task</code>s on that core must use the SIMD-enabled context switching routine,
+which is found in the <code>context_switch_sse</code> crate. </li>
+</ul>
+<p>Note that there is no danger in forcing all SIMD Tasks to always use the SIMD-enabled context switching routine,
+it will always be correct to do so.
+Each Task can have its own Context and context_switch routine, based on whether or not it uses SIMD instructions,
+and that can be determined statically and independently for each task, without considering which other tasks are running. 
+We don’t really need personalities for that, since the <code>context_switch</code> routines are self-contained.<br />
+However, that static policy misses out on the performance optimization of 
+not having to save/restore SIMD registers when only a single SIMD Task is running on a given core.</p>
+<h2 id="interrupt-handling"><a href="#interrupt-handling">Interrupt Handling</a></h2>
+<ul>
+<li>
+<p>If interrupt handlers are only ever compiled for the regular world, i.e., 
+no interrupt handlers exist that are compiled to use SIMD instructions,
+then we do not have to save/restore SIMD registers on an interrupt because
+we’re guaranteed that no interrupt handling code can ever use (overwrite) SIMD registers. 
+Thus, even if there are some SIMD enabled tasks running on a given core, an interrupt handler need not save
+those SIMD registers if it cannot possibly ever touch them. </p>
+</li>
+<li>
+<p>If interrupt handlers <em>are</em> compiled for the SIMD world and use SIMD instructions in the handler 
+(or any function accessible from the interrupt handler), then they must (and obviously will) save SIMD registers.
+In fact, I don’t believe it’s possible to compile an interrupt handler that uses SIMD instructions but doesn’t save SIMD registers
+(at least while we’re stil using the special x86 interrupt calling convention to have LLVM do it for us).</p>
+</li>
+</ul>
+<p>Thus, the best option is just to require that any SIMD-enabled interrupt handlers must save all SIMD registers, 
+which is a rule determined completely independently of which tasks are running on that core. 
+In general, this is a good rule, because it’s poor design to have an interrupt handler do a lot of work,
+such as processing data in a way that would need SIMD instructions. 
+Instead, those processing stages should be moved out of the interrupt handler and into a separate Task elsewhere,
+i.e., a classic bottom-half/top-half design.</p>
+</div></details></section></div></main></body></html>

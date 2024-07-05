@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["thread_local"],"struct":["AccessError","LocalKey"]};

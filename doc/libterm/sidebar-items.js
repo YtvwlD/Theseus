@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FONT_BACKGROUND_COLOR","FONT_FOREGROUND_COLOR"],"enum":["ScrollError"],"mod":["cursor"],"struct":["Terminal"]};

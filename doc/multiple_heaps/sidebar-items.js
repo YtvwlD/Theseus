@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PER_CORE_HEAP_INITIAL_SIZE_PAGES"],"fn":["init_individual_heap","switch_to_multiple_heaps"],"struct":["MultipleHeaps"]};

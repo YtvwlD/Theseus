@@ -1,0 +1,46 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="This crate exists solely to hold a centralized list of features  used across all Theseus crates for conditional compilation and configuration."><title>theseus_features - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-9ee3a5e31a2afa3e.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="theseus_features" data-themes="" data-resource-suffix="" data-rustdoc-version="1.75.0-nightly (aa1a71e9e 2023-10-26)" data-channel="nightly" data-search-js="search-8fbf244ebcf71464.js" data-settings-js="settings-74424d7eec62a23e.js" ><script src="../static.files/storage-fec3eaa3851e447d.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f34af1a0ee6bacd.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-5d8b3c7633ad77ba.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../theseus_features/index.html">theseus_features</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><ul class="block">
+            <li><a id="all-types" href="all.html">All Items</a></li></ul></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">theseus_features</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../src/theseus_features/lib.rs.html#1-50">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>This crate exists solely to hold a centralized list of features 
+used across all Theseus crates for conditional compilation and configuration.</p>
+<p>It has no code, logic, or data.</p>
+<h3 id="how-to-specify-optional-cratesfeatures-in-theseus"><a href="#how-to-specify-optional-cratesfeatures-in-theseus">How to specify optional crates/features in Theseus</a></h3>
+<p>To make a crate (or folder of crates) optional, do the following:</p>
+<ol>
+<li>Add it to the set of <code>exclude</code>s in the top-level Theseus <code>Cargo.toml</code> file.</li>
+<li>Add it as an optional dependency in this crate’s <code>Cargo.toml</code> file, ensuring <code>optional = true</code>.</li>
+<li>(Optional) Add it as a feature below, in order to give it a specific name.
+<ul>
+<li>Technically this isn’t required, but it can offer a clearer/different name.</li>
+<li>You can optionally add it to the <code>default</code> set of features,
+or create a new group of features that includes it, 
+or even add it to an existing set of features.</li>
+<li>If you do so, add that new feature or feature group to the <code>everything</code> feature.</li>
+</ul>
+</li>
+</ol>
+<h3 id="how-to-customize-what-is-included-in-a-theseus-build"><a href="#how-to-customize-what-is-included-in-a-theseus-build">How to customize what is included in a Theseus build</a></h3>
+<p>When building Theseus using <code>make</code>, you can choose which of the features 
+specified in this crate’s <code>Cargo.toml</code> file are enabled.
+Simply set the <code>FEATURES</code> environment variable, which has the default value of <code>--workspace</code>.</p>
+<p>The <code>FEATURES</code> variable is passed directly into <code>cargo build</code>, meaning that is must
+follow the formatting expected by `cargo build.</p>
+<blockquote>
+<p>Run <code>cargo build --help</code> to see more details about what arguments cargo expects.</p>
+</blockquote>
+<div class="example-wrap"><pre class="language-sh"><code># Build the bare minimum `default-members` of the Theseus workspace, 
+# excluding those specified by the `default` feature in this crate&#39;s `Cargo.toml`.
+make FEATURES=--no-default-features
+ 
+# Build the bare minimum `default-members` of the Theseus workspace, plus all optional crates.
+make FEATURES=&quot;--features everything&quot;
+ 
+# Build the standard Theseus workspace plus all optional crates. 
+# This is what `make full` or `make all` does.
+make FEATURES=&quot;--workspace --features theseus_features/everything&quot;
+ 
+# Build the bare minimum `default-members` of the Theseus workspace, plus the `ps` crate.
+make FEATURES=&quot;--features ps&quot;
+ 
+# Build the standard Theseus workspace plus the crates needed for the below `wasmtime` feature
+# and the `test_panic` crate.
+make FEATURES=&quot;--workspace --features wasmtime --features test_panic&quot; 
+</code></pre></div></div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TASKS_DIRECTORY_NAME","TASKS_DIRECTORY_PATH"],"fn":["init"],"struct":["MmiDir","MmiFile","TaskDir","TaskFile","TaskFs"]};

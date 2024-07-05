@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_LOG_LEVEL","EARLY_LOG_BUFFER_SIZE","LOG_MAX_WRITERS"],"fn":["early_init","init","set_log_level","take_early_log_writers","write_fmt","write_str"]};

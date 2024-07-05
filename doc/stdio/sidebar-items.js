@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["KeyEventQueue","KeyEventQueueReader","KeyEventQueueWriter","KeyEventReadGuard","RingBufferEof","Stdio","StdioReadGuard","StdioReader","StdioWriteGuard","StdioWriter"],"type":["RingBufferEofRef"]};

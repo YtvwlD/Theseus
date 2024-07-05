@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FaultType","RecoveryAction"],"fn":["clear_fault_log","from_exception_number","get_the_most_recent_match","log_exception","log_handled_fault","log_panic_entry","print_fault_log","remove_unhandled_exceptions"],"struct":["FaultEntry"]};

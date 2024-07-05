@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AllocationError","AllocationRequest"],"fn":["allocate_pages","allocate_pages_at","allocate_pages_by_bytes","allocate_pages_by_bytes_at","allocate_pages_by_bytes_deferred","allocate_pages_by_bytes_in_range","allocate_pages_deferred","allocate_pages_in_range","init"],"struct":["AllocatedPages","DeferredAllocAction"]};

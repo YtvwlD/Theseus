@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["log_page_size"],"mod":["command_queue","completion_queue","event_queue","initialization_segment","receive_queue","send_queue","work_queue"],"struct":["Cqn","Eqn","FgId","FtId","Lkey","Pd","Rqn","Sqn","Td","Tirn","Tisn"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["insert_child_streams","line_discipline","print_to_stdout_args","remove_child_streams","stderr","stdin","stdout","streams"],"macro":["print","println"],"struct":["IoStreams"],"trait":["ImmutableRead","ImmutableWrite"]};

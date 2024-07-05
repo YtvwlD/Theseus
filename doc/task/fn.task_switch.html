@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Switches from the current task to the given `next` task."><title>task_switch in task - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-9ee3a5e31a2afa3e.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="task" data-themes="" data-resource-suffix="" data-rustdoc-version="1.75.0-nightly (aa1a71e9e 2023-10-26)" data-channel="nightly" data-search-js="search-8fbf244ebcf71464.js" data-settings-js="settings-74424d7eec62a23e.js" ><script src="../static.files/storage-fec3eaa3851e447d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-5f34af1a0ee6bacd.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-5d8b3c7633ad77ba.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../task/index.html">task</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Function <a href="index.html">task</a>::<wbr><a class="fn" href="#">task_switch</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../src/task/lib.rs.html#619-734">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><pre class="rust item-decl"><code>pub fn task_switch(
+    next: <a class="struct" href="struct.TaskRef.html" title="struct task::TaskRef">TaskRef</a>,
+    cpu_id: CpuId,
+    preemption_guard: PreemptionGuard
+) -&gt; (<a class="primitive" href="https://doc.rust-lang.org/nightly/core/primitive.bool.html">bool</a>, PreemptionGuard)</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Switches from the current task to the given <code>next</code> task.</p>
+<h3 id="arguments"><a href="#arguments">Arguments</a></h3>
+<ul>
+<li><code>next</code>: the task to switch to.</li>
+<li><code>cpu_id</code>: the ID of the current CPU.</li>
+<li><code>preemption_guard</code>: a guard that is used to ensure preemption is disabled
+for the duration of this task switch operation.</li>
+</ul>
+<h3 id="important-note-about-control-flow"><a href="#important-note-about-control-flow">Important Note about Control Flow</a></h3>
+<p>If this is the first time that <code>next</code> task has been switched to,
+the control flow will <em>NOT</em> return from this function,
+and will instead jump to a wrapper function (that will directly invoke
+the <code>next</code> task’s entry point function.</p>
+<p>Control flow may eventually return to this point, but not until another
+task switch occurs away from the given <code>next</code> task to a different task.
+Note that regardless of control flow, the return values will always be valid and correct.</p>
+<h3 id="return"><a href="#return">Return</a></h3>
+<p>Returns a tuple of:</p>
+<ol>
+<li>a <code>bool</code> indicating whether an actual task switch occurred:
+<ul>
+<li>If <code>true</code>, the task switch did occur, and <code>next</code> is now the current task.</li>
+<li>If <code>false</code>, the task switch did not occur, and the current task is unchanged.</li>
+</ul>
+</li>
+<li>a [<code>PreemptionGuard</code>] that allows the caller to control for how long
+preemption remains disabled, i.e., until the guard is dropped.</li>
+</ol>
+<h3 id="locking--deadlock"><a href="#locking--deadlock">Locking / Deadlock</a></h3>
+<p>Obtains brief locks on both the current <code>Task</code>’s inner state and
+the given <code>next</code> <code>Task</code>’s inner state in order to mutate them.</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bootstrap_cpu","cpu_count","cpus","current_cpu","is_bootstrap_cpu"],"struct":["CpuId","OptionalCpuId"]};

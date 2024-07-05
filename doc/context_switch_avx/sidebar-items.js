@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["context_switch_avx","read_first_register"],"macro":["restore_registers_avx","save_registers_avx"],"struct":["ContextAVX"]};

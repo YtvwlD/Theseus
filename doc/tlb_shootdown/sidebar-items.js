@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["handle_tlb_shootdown_ipi","init"]};

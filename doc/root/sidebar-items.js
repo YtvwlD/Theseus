@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ROOT_DIRECTORY_NAME"],"fn":["get_root"],"struct":["ROOT","RootDirectory"]};

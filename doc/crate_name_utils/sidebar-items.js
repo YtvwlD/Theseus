@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["crate_name_from_path","get_containing_crate_name","get_containing_crate_name_ranges","is_valid_crate_name_char","replace_containing_crate_name"]};

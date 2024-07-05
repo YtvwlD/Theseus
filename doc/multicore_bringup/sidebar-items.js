@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_graphic_info","handle_ap_cores"],"struct":["GraphicInfo","MulticoreBringupInfo"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IRQ_BASE_OFFSET","PIC_SPURIOUS_INTERRUPT_IRQ"],"struct":["ChainedPics","IrqStatusRegisters"]};

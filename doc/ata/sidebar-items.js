@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AtaDeviceType"],"struct":["AtaDrive","AtaError","AtaFirmwareVersion","AtaIdentifyData","AtaModelNumber","AtaSerialNumber","AtaStatus","IdeController","IdeControllerIter"],"type":["AtaDriveRef"]};

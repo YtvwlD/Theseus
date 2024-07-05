@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INTEL_82599","INTEL_VEND","IXGBE_NUM_RX_QUEUES_ENABLED","IXGBE_NUM_TX_QUEUES_ENABLED"],"enum":["FilterProtocol","LinkSpeedMbps","RxBufferSizeKiB"],"fn":["get_ixgbe_nic","get_ixgbe_nics_list","rx_poll_mq","tx_send_mq"],"mod":["test_packets","virtual_function"],"static":["IXGBE_NICS"],"struct":["IxgbeNic"]};

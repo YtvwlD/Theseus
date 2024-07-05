@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SerialPortAddress","SerialPortInterruptEvent"],"fn":["get_serial_port","init_serial_port","set_connection_listener","take_serial_port_basic"],"struct":["DataChunk","DataSenderAlreadyExists","SerialPort","SerialPortBasic"]};

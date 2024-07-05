@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CPU_LOCAL_TIMER_IRQ","IRQ_BASE_OFFSET"],"enum":["EoiBehaviour"],"fn":["deregister_interrupt","eoi","init","init_ap","is_exception_handler_with_error_code","register_interrupt","register_msi_interrupt"],"macro":["interrupt_handler"],"static":["IDT"],"struct":["InterruptStackFrame"],"type":["InterruptHandler","InterruptNumber"]};

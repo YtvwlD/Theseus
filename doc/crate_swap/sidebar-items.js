@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InvalidSwapRequest"],"fn":["clear_unloaded_crate_cache","swap_crates"],"struct":["SwapRequest"],"type":["StateTransferFunction","SwapRequestList"]};

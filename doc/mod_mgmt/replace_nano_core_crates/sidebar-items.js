@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["replace_nano_core_crates"]};

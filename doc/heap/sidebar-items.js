@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HEAP_FLAGS"],"fn":["init_single_heap","set_allocator"],"static":["GLOBAL_ALLOCATOR"],"struct":["Heap"]};

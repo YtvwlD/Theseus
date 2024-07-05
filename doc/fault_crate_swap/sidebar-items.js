@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["constant_offset_fix","do_self_swap","get_crate_to_swap","self_swap_handler"],"struct":["SwapRanges"]};

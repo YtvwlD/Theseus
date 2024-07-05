@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FileOrDir"],"trait":["Directory","File","FsNode"],"type":["DirRef","FileRef","WeakDirRef","WeakFileRef"]};

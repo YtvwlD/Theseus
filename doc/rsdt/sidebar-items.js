@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RSDT_SIGNATURE","XSDT_SIGNATURE"],"fn":["handle"],"struct":["RsdtXsdt"]};

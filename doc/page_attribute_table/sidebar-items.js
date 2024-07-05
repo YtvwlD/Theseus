@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MemoryCachingType"],"fn":["init","is_supported"],"static":["FIXED_PAT"],"struct":["PageAttributeTable","PatNotSupported"]};

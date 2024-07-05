@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["early_sleep","now","register_clock_source","register_early_sleeper"],"struct":["Duration","Instant","Monotonic","Period","WallTime"],"trait":["ClockSource","ClockType","EarlySleeper"]};

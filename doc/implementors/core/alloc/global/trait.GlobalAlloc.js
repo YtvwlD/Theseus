@@ -1,0 +1,4 @@
+(function() {var implementors = {
+"heap":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/alloc/global/trait.GlobalAlloc.html\" title=\"trait core::alloc::global::GlobalAlloc\">GlobalAlloc</a> for <a class=\"struct\" href=\"heap/struct.Heap.html\" title=\"struct heap::Heap\">Heap</a>"]],
+"multiple_heaps":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/alloc/global/trait.GlobalAlloc.html\" title=\"trait core::alloc::global::GlobalAlloc\">GlobalAlloc</a> for <a class=\"struct\" href=\"multiple_heaps/struct.MultipleHeaps.html\" title=\"struct multiple_heaps::MultipleHeaps\">MultipleHeaps</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

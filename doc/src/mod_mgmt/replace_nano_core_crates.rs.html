@@ -1,0 +1,323 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel/mod_mgmt/src/replace_nano_core_crates.rs`."><title>replace_nano_core_crates.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-9ee3a5e31a2afa3e.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="mod_mgmt" data-themes="" data-resource-suffix="" data-rustdoc-version="1.75.0-nightly (aa1a71e9e 2023-10-26)" data-channel="nightly" data-search-js="search-8fbf244ebcf71464.js" data-settings-js="settings-74424d7eec62a23e.js" ><script src="../../static.files/storage-fec3eaa3851e447d.js"></script><script defer src="../../static.files/src-script-3280b574d94e47b4.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f34af1a0ee6bacd.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-5d8b3c7633ad77ba.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<a href="#2" id="2">2</a>
+<a href="#3" id="3">3</a>
+<a href="#4" id="4">4</a>
+<a href="#5" id="5">5</a>
+<a href="#6" id="6">6</a>
+<a href="#7" id="7">7</a>
+<a href="#8" id="8">8</a>
+<a href="#9" id="9">9</a>
+<a href="#10" id="10">10</a>
+<a href="#11" id="11">11</a>
+<a href="#12" id="12">12</a>
+<a href="#13" id="13">13</a>
+<a href="#14" id="14">14</a>
+<a href="#15" id="15">15</a>
+<a href="#16" id="16">16</a>
+<a href="#17" id="17">17</a>
+<a href="#18" id="18">18</a>
+<a href="#19" id="19">19</a>
+<a href="#20" id="20">20</a>
+<a href="#21" id="21">21</a>
+<a href="#22" id="22">22</a>
+<a href="#23" id="23">23</a>
+<a href="#24" id="24">24</a>
+<a href="#25" id="25">25</a>
+<a href="#26" id="26">26</a>
+<a href="#27" id="27">27</a>
+<a href="#28" id="28">28</a>
+<a href="#29" id="29">29</a>
+<a href="#30" id="30">30</a>
+<a href="#31" id="31">31</a>
+<a href="#32" id="32">32</a>
+<a href="#33" id="33">33</a>
+<a href="#34" id="34">34</a>
+<a href="#35" id="35">35</a>
+<a href="#36" id="36">36</a>
+<a href="#37" id="37">37</a>
+<a href="#38" id="38">38</a>
+<a href="#39" id="39">39</a>
+<a href="#40" id="40">40</a>
+<a href="#41" id="41">41</a>
+<a href="#42" id="42">42</a>
+<a href="#43" id="43">43</a>
+<a href="#44" id="44">44</a>
+<a href="#45" id="45">45</a>
+<a href="#46" id="46">46</a>
+<a href="#47" id="47">47</a>
+<a href="#48" id="48">48</a>
+<a href="#49" id="49">49</a>
+<a href="#50" id="50">50</a>
+<a href="#51" id="51">51</a>
+<a href="#52" id="52">52</a>
+<a href="#53" id="53">53</a>
+<a href="#54" id="54">54</a>
+<a href="#55" id="55">55</a>
+<a href="#56" id="56">56</a>
+<a href="#57" id="57">57</a>
+<a href="#58" id="58">58</a>
+<a href="#59" id="59">59</a>
+<a href="#60" id="60">60</a>
+<a href="#61" id="61">61</a>
+<a href="#62" id="62">62</a>
+<a href="#63" id="63">63</a>
+<a href="#64" id="64">64</a>
+<a href="#65" id="65">65</a>
+<a href="#66" id="66">66</a>
+<a href="#67" id="67">67</a>
+<a href="#68" id="68">68</a>
+<a href="#69" id="69">69</a>
+<a href="#70" id="70">70</a>
+<a href="#71" id="71">71</a>
+<a href="#72" id="72">72</a>
+<a href="#73" id="73">73</a>
+<a href="#74" id="74">74</a>
+<a href="#75" id="75">75</a>
+<a href="#76" id="76">76</a>
+<a href="#77" id="77">77</a>
+<a href="#78" id="78">78</a>
+<a href="#79" id="79">79</a>
+<a href="#80" id="80">80</a>
+<a href="#81" id="81">81</a>
+<a href="#82" id="82">82</a>
+<a href="#83" id="83">83</a>
+<a href="#84" id="84">84</a>
+<a href="#85" id="85">85</a>
+<a href="#86" id="86">86</a>
+<a href="#87" id="87">87</a>
+<a href="#88" id="88">88</a>
+<a href="#89" id="89">89</a>
+<a href="#90" id="90">90</a>
+<a href="#91" id="91">91</a>
+<a href="#92" id="92">92</a>
+<a href="#93" id="93">93</a>
+<a href="#94" id="94">94</a>
+<a href="#95" id="95">95</a>
+<a href="#96" id="96">96</a>
+<a href="#97" id="97">97</a>
+<a href="#98" id="98">98</a>
+<a href="#99" id="99">99</a>
+<a href="#100" id="100">100</a>
+<a href="#101" id="101">101</a>
+<a href="#102" id="102">102</a>
+<a href="#103" id="103">103</a>
+<a href="#104" id="104">104</a>
+<a href="#105" id="105">105</a>
+<a href="#106" id="106">106</a>
+<a href="#107" id="107">107</a>
+<a href="#108" id="108">108</a>
+<a href="#109" id="109">109</a>
+<a href="#110" id="110">110</a>
+<a href="#111" id="111">111</a>
+<a href="#112" id="112">112</a>
+<a href="#113" id="113">113</a>
+<a href="#114" id="114">114</a>
+<a href="#115" id="115">115</a>
+<a href="#116" id="116">116</a>
+<a href="#117" id="117">117</a>
+<a href="#118" id="118">118</a>
+<a href="#119" id="119">119</a>
+<a href="#120" id="120">120</a>
+<a href="#121" id="121">121</a>
+<a href="#122" id="122">122</a>
+<a href="#123" id="123">123</a>
+<a href="#124" id="124">124</a>
+<a href="#125" id="125">125</a>
+<a href="#126" id="126">126</a>
+<a href="#127" id="127">127</a>
+<a href="#128" id="128">128</a>
+<a href="#129" id="129">129</a>
+<a href="#130" id="130">130</a>
+<a href="#131" id="131">131</a>
+<a href="#132" id="132">132</a>
+<a href="#133" id="133">133</a>
+<a href="#134" id="134">134</a>
+<a href="#135" id="135">135</a>
+<a href="#136" id="136">136</a>
+<a href="#137" id="137">137</a>
+<a href="#138" id="138">138</a>
+<a href="#139" id="139">139</a>
+<a href="#140" id="140">140</a>
+<a href="#141" id="141">141</a>
+<a href="#142" id="142">142</a>
+<a href="#143" id="143">143</a>
+<a href="#144" id="144">144</a>
+<a href="#145" id="145">145</a>
+<a href="#146" id="146">146</a>
+<a href="#147" id="147">147</a>
+<a href="#148" id="148">148</a>
+<a href="#149" id="149">149</a>
+<a href="#150" id="150">150</a>
+<a href="#151" id="151">151</a>
+<a href="#152" id="152">152</a>
+<a href="#153" id="153">153</a>
+<a href="#154" id="154">154</a>
+<a href="#155" id="155">155</a>
+<a href="#156" id="156">156</a>
+<a href="#157" id="157">157</a>
+<a href="#158" id="158">158</a>
+<a href="#159" id="159">159</a>
+<a href="#160" id="160">160</a>
+<a href="#161" id="161">161</a>
+</pre></div><pre class="rust"><code><span class="doccomment">//! Routines for replacing the crates that comprise the `nano_core`,
+//! i.e., the base kernel image. 
+//! 
+//! In loadable mode, this should be invoked to duplicitously load each one 
+//! of the nano_core&#39;s constituent crates such that other crates loaded in the future
+//! will depend on those dynamically-loaded instances rather than 
+//! the statically-linked sections in the nano_core&#39;s base kernel image.
+//!
+//! As of now, the newly-loaded crates will still depend on (and link against)
+//! the data sections (.data and .bss) in the actual nano_core&#39;s memory pages. 
+//! I haven&#39;t found a correct, safe way to replace those data sections yet,
+//! since the type contract of a static variable is that is a singleton instance for all eternity.
+//! 
+//! However, the non-data sections **are** replaced, e.g., .text, .rodata. 
+//! All crates loaded in the future will depend on those newly-loaded (non-data) sections 
+//! instead of their original counterparts in the nano_core.
+//! 
+
+
+</span><span class="kw">use super</span>::{CrateNamespace, LoadedCrate, StrongCrateRef, MmiRef};
+<span class="kw">use </span>alloc::{
+    collections::BTreeSet,
+    string::String,
+    sync::Arc,
+};
+<span class="kw">use </span>fs_node::FileRef;
+
+
+<span class="doccomment">/// See the module-level documentation for how this works. 
+/// 
+/// # Current Limitations
+/// Currently, this does not actually rewrite the existing sections in the nano_core itself
+/// to redirect them to depend on the newly-loaded crate instances. 
+/// All it can do is replace the existing nano_core
+/// This is a limitation that we&#39;re working to overcome, and is difficult because we need
+/// to obtain a list of all linker relocations that were performed by the static linker
+/// such that we can properly rewrite the existing dependencies. 
+/// For simple relocations like RX86_64_64 where the value is just an absolute address,
+/// it would be straightforward to simply scan the nano_core&#39;s `kernel.bin` binary file 
+/// for each section&#39;s virtual address in order to derive/recover the relocations and dependencies between sections,
+/// but it&#39;s not always that simple for other relocation types.
+/// Perhaps we can ask the linker to emit a list of relocations it performs and then provide 
+/// that list as input into this function so that it doesn&#39;t have to guess when deriving relocations.
+</span><span class="kw">pub fn </span>replace_nano_core_crates(
+    namespace: <span class="kw-2">&amp;</span>Arc&lt;CrateNamespace&gt;,
+    nano_core_crate_ref: StrongCrateRef,
+    kernel_mmi_ref: <span class="kw-2">&amp;</span>MmiRef,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
+    <span class="kw">let </span>nano_core_crate = nano_core_crate_ref.lock_as_ref();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>constituent_crates = BTreeSet::new();
+    <span class="kw">for </span>sec <span class="kw">in </span>nano_core_crate.global_sections_iter() {
+        <span class="kw">for </span>n <span class="kw">in </span><span class="kw">super</span>::get_containing_crate_name(sec.name.as_str()) {
+            constituent_crates.insert(String::from(n));
+        }
+    }
+
+    <span class="comment">// For now we just replace the &quot;memory&quot; crate. 
+    // More crates can be added later, up to every `constituent_crate` in the nano_core.
+    </span><span class="kw">let </span>(crate_object_file, _ns) = CrateNamespace::get_crate_object_file_starting_with(namespace, <span class="string">&quot;memory-&quot;</span>)
+        .ok_or(<span class="string">&quot;Failed to find \&quot;memory-\&quot; crate&quot;</span>)<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>_new_crate_ref = load_crate_using_nano_core_data_sections(
+        <span class="kw-2">&amp;</span>nano_core_crate, 
+        namespace,
+        <span class="kw-2">&amp;</span>crate_object_file,
+        kernel_mmi_ref,
+        <span class="bool-val">false</span>,
+    )<span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(())
+}
+
+
+<span class="doccomment">/// Load the given crate, but instead of using its own data sections (.data and .bss),
+/// we use the corresponding sections from the nano_core base image. 
+/// This avoids the problem of trying to create a second instace of a static variable
+/// that&#39;s supposed to be a system-wide singleton. 
+/// 
+/// We could technically achieve it by forcing every static variable to be `Clone`, 
+/// e.g., by wrapping it in an `Arc`, but we cannot do this for early crates like `memory`
+/// that exist before we have the ability to use alloc types.
+/// Note that we should do something like this for sharing static variables 
+/// across different `CrateNamespace` personalities. 
+/// 
+/// # Procedure
+/// Instead of calling load_crate() and loading the new crate as normal, we break it down into its constituent parts. 
+/// 1. Call `load_crate_sections()` as normal. The data sections will be ignored, but that&#39;s okay.
+/// 2. Go through the .data/.bss sections in the partially loaded new crate, and replace them with references to
+///    the corresponding data section in the nano_core.
+/// 3. Remove (take) and drop the new crate&#39;s `data_pages`, just to ensure they&#39;re not actually being used. 
+/// 4. Add the new crate&#39;s global sections to the symbol map, as usual. 
+///    We can skip adding data/bss sections to the symbol map since they were already added in `parse_nano_core()`.
+/// 5. Call `perform_relocations()` as usual, which will use the changed data/bss sections above,
+///    resulting in future crates depending on the nano_core&#39;s data sections as needed.
+/// 6. Add the new crate into the `namespace`&#39;s new crate tree, as usual.
+</span><span class="kw">fn </span>load_crate_using_nano_core_data_sections(
+    nano_core_crate: <span class="kw-2">&amp;</span>LoadedCrate,
+    namespace: <span class="kw-2">&amp;</span>Arc&lt;CrateNamespace&gt;,
+    crate_object_file: <span class="kw-2">&amp;</span>FileRef,
+    kernel_mmi_ref: <span class="kw-2">&amp;</span>MmiRef, 
+    verbose_log: bool,
+) -&gt; <span class="prelude-ty">Result</span>&lt;StrongCrateRef, <span class="kw-2">&amp;</span><span class="lifetime">&#39;static </span>str&gt; {
+    <span class="kw">let </span>cf = crate_object_file.lock();
+    <span class="macro">debug!</span>(<span class="string">&quot;Replacing nano_core&#39;s constituent crate {:?}&quot;</span>, cf.get_name());
+
+    <span class="comment">// (1) Load the crate&#39;s sections. We won&#39;t end up using the newly-loaded .data/.bss sections, but that&#39;s fine.
+    </span><span class="kw">let </span>(new_crate_ref, elf_file) = namespace.load_crate_sections(<span class="kw-2">&amp;*</span>cf, kernel_mmi_ref, verbose_log)<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>new_crate_name; 
+    <span class="kw">let </span>_num_new_syms: usize;
+    <span class="kw">let </span>_num_new_sections: usize;
+
+    <span class="comment">// (2) Go through the .data/.bss sections in the partially loaded new crate,
+    //     and replace them with references to the corresponding data section in the nano_core.
+    </span>{
+        <span class="kw">let </span><span class="kw-2">mut </span>new_crate = new_crate_ref.lock_as_mut().ok_or(<span class="string">&quot;BUG: could not get exclusive mutable access to newly-loaded crate&quot;</span>)<span class="question-mark">?</span>;
+
+        <span class="kw">for </span>shndx <span class="kw">in </span>new_crate.data_sections.clone() {
+            <span class="kw">let </span>new_data_sec = new_crate.sections.get_mut(<span class="kw-2">&amp;</span>shndx).ok_or_else(|| {
+                <span class="macro">error!</span>(<span class="string">&quot;BUG: new_crate&#39;s data section shndx {} wasn&#39;t in the new_crate&#39;s sections map.&quot;</span>, shndx);
+                <span class="string">&quot;BUG: new_crate&#39;s data section shndx wasn&#39;t in the new_crate&#39;s sections map.&quot;
+            </span>})<span class="question-mark">?</span>;
+            <span class="comment">// Get the section from the nano_core that exactly matches the new_sec.
+            </span><span class="kw">let </span>old_data_sec = nano_core_crate.data_sections_iter()
+                .find(|<span class="kw-2">&amp;</span>sec| sec.name == new_data_sec.name)
+                .ok_or_else(|| {
+                    <span class="macro">error!</span>(<span class="string">&quot;BUG: couldn&#39;t find old_data_sec in nano_core to copy data into new_data_sec {:?} (.data/.bss state transfer)&quot;</span>, new_data_sec.name);
+                    <span class="string">&quot;BUG: couldn&#39;t find old_data_sec in nano_core to copy data into new_data_sec (.data/.bss state transfer)&quot;
+                </span>})<span class="question-mark">?</span>;
+
+            <span class="comment">// Replace the data section references in the new crate&#39;s `sections` list with the corresponding sections in the nano_core
+            </span><span class="kw-2">*</span>new_data_sec = Arc::clone(old_data_sec);
+        }
+        
+        <span class="comment">// (3) Remove and drop the new_crate&#39;s data MappedPages, since it shouldn&#39;t be used. 
+        </span><span class="kw">let </span>_unused_new_data_pages = new_crate.data_pages.take();
+        drop(_unused_new_data_pages);
+
+        <span class="comment">// (4) Just like in the regular load_crate() function, we add the new crate&#39;s symbols to the map. 
+        // We only need to add non-data sections, since the data sections that we&#39;re using from the nano_core
+        // have already been added to the symbol map when the nano_core was originally parsed.
+        </span>_num_new_syms = namespace.add_symbols_filtered(
+            new_crate.sections.values(), 
+            |sec| !sec.typ.is_data_or_bss(),
+            verbose_log,
+        );
+        _num_new_sections = new_crate.sections.len();
+        new_crate_name = new_crate.crate_name.clone();
+    }
+
+    <span class="comment">// (5) Perform the actual relocations, using the replaced data sections above.
+    </span>namespace.perform_relocations(<span class="kw-2">&amp;</span>elf_file, <span class="kw-2">&amp;</span>new_crate_ref, <span class="prelude-val">None</span>, kernel_mmi_ref, verbose_log)<span class="question-mark">?</span>;
+
+    <span class="macro">info!</span>(<span class="string">&quot;Replaced nano_core constituent crate {:?}, num sections: {}, added {} new symbols (should be 0).&quot;</span>,
+        new_crate_name, _num_new_sections, _num_new_syms
+    );
+    <span class="comment">// (6) Add the newly-loaded crate to the namespace.
+    </span>namespace.crate_tree.lock().insert(new_crate_name, new_crate_ref.clone_shallow());
+    <span class="prelude-val">Ok</span>(new_crate_ref)
+}
+</code></pre></div></section></main></body></html>

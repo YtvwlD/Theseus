@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["invoke_with_current_registers"],"struct":["StackFrame","StackFrameIter","UnwindingContext"],"traitalias":["FuncWithRegisters"]};

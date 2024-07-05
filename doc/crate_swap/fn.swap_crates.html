@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Swaps in new crates that can optionally replace existing crates in this `CrateNamespace`."><title>swap_crates in crate_swap - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-9ee3a5e31a2afa3e.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="crate_swap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.75.0-nightly (aa1a71e9e 2023-10-26)" data-channel="nightly" data-search-js="search-8fbf244ebcf71464.js" data-settings-js="settings-74424d7eec62a23e.js" ><script src="../static.files/storage-fec3eaa3851e447d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-5f34af1a0ee6bacd.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-5d8b3c7633ad77ba.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../crate_swap/index.html">crate_swap</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Function <a href="index.html">crate_swap</a>::<wbr><a class="fn" href="#">swap_crates</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../src/crate_swap/lib.rs.html#125-774">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><pre class="rust item-decl"><code>pub fn swap_crates(
+    this_namespace: &amp;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html" title="struct alloc::sync::Arc">Arc</a>&lt;CrateNamespace&gt;,
+    swap_requests: <a class="type" href="type.SwapRequestList.html" title="type crate_swap::SwapRequestList">SwapRequestList</a>,
+    override_namespace_dir: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;NamespaceDir&gt;,
+    state_transfer_functions: <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;,
+    kernel_mmi_ref: &amp;MmiRef,
+    verbose_log: <a class="primitive" href="https://doc.rust-lang.org/nightly/core/primitive.bool.html">bool</a>,
+    cache_old_crates: <a class="primitive" href="https://doc.rust-lang.org/nightly/core/primitive.bool.html">bool</a>
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/core/primitive.unit.html">()</a>, &amp;'static <a class="primitive" href="https://doc.rust-lang.org/nightly/core/primitive.str.html">str</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Swaps in new crates that can optionally replace existing crates in this <code>CrateNamespace</code>.</p>
+<p>See the documentation of the <a href="#struct.SwapRequest.html"><code>SwapRequest</code></a> struct for more details.</p>
+<p>In general, the strategy for replacing an old crate <code>C</code> with a new crate <code>C2</code> consists of three steps:</p>
+<ol>
+<li>Load the new replacement crate <code>C2</code> from its object file.</li>
+<li>Copy the .data and .bss sections from old crate <code>C</code> to the new crate <code>C2</code></li>
+<li>Set up new relocation entries that redirect all dependencies on the old crate <code>C</code> to the new crate <code>C2</code>.</li>
+<li>Remove crate <code>C</code> and clean it up, e.g., removing its entries from the symbol map.
+Save the removed crate (and its symbol subtrie) in a cache for later use to expedite future swapping operations.</li>
+</ol>
+<p>The given <code>CrateNamespace</code> is used as the backup namespace for resolving unknown symbols,
+in adddition to any recursive namespaces on which this namespace depends.</p>
+<p>Upon a successful return, this namespace (and/or its recursive namespace) will have the new crates in place of the old ones,
+and the old crates will be completely removed from this namespace. 
+In this namespace there will be no remaining dependencies on the old crates, 
+although crates in other namespaces may still include and depend upon those old crates.</p>
+<h2 id="arguments"><a href="#arguments">Arguments</a></h2>
+<ul>
+<li><code>swap_requests</code>: a list of several <code>SwapRequest</code>s, in order to allow swapping multiple crates all at once 
+as a single “atomic” procedure, which prevents weird linking/relocation errors, 
+such as a new crate linking against an old crate that already exists in this namespace
+instead of linking against the new one that we want to replace that old crate with. </li>
+<li><code>override_namespace_dir</code>: the directories of object files from which missing crates should be loaded.
+If a crate cannot be found in this directory set, this namespace’s directory set will be searched for the crate. 
+If <code>None</code>, only this <code>CrateNamespace</code>’s directory set (and its recursive namespace’s) will be used to find missing crates to be loaded.</li>
+<li><code>state_transfer_functions</code>: the fully-qualified symbol names of the state transfer functions, 
+arbitrary functions that are invoked after all of the new crates are loaded but before the old crates are unloaded, 
+in order to allow transfer of states from old crates to new crates or proper setup of states for the new crates.
+These function should exist in the new namespace (or its directory set) and should take the form of a 
+<a href="../type.StateTransferFunction.html"><code>StateTransferFunction</code></a>.
+The given functions are invoked with the arguments <code>(current_namespace, new_namespace)</code>, 
+in which the <code>current_namespace</code> is the one currently running that contains the old crates,
+and the <code>new_namespace</code> contains only newly-loaded crates that are not yet being used.
+Both namespaces may (and likely will) contain more crates than just the old and new crates specified in the swap request list.</li>
+<li><code>kernel_mmi_ref</code>: a reference to the kernel’s <code>MemoryManagementInfo</code>.</li>
+<li><code>verbose_log</code>: enable verbose logging.</li>
+</ul>
+<h2 id="warning-correctness-not-guaranteed"><a href="#warning-correctness-not-guaranteed">Warning: Correctness not guaranteed</a></h2>
+<p>This function currently makes no attempt to guarantee correct operation after a crate is swapped. 
+For example, if the new crate changes a function or data structure, there is no guarantee that 
+other crates will be swapped alongside that one. 
+It will most likely error out, but this responsibility is currently left to the caller.</p>
+<h2 id="crate-swapping-optimizations"><a href="#crate-swapping-optimizations">Crate swapping optimizations</a></h2>
+<p>When one or more crates is swapped out, they are not fully unloaded, but rather saved in a cache
+in order to accelerate future swapping commands. </p>
+</div></details></section></div></main></body></html>

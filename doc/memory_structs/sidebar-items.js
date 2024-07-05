@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MemChunkSize","MemoryState"],"struct":["Frame","FrameRange","Page","Page1G","Page2M","Page4K","PageRange","PhysicalAddress","VirtualAddress"],"trait":["PageSize"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["enable_rtc_interrupt","get_rtc_ticks","read_rtc","set_rtc_frequency"],"struct":["InvalidRtcRate","RtcTime"],"type":["RtcInterruptFunction"]};

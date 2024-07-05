@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PTE_FRAME_MASK"],"struct":["PteFlags","PteFlagsAarch64","PteFlagsArch","PteFlagsX86_64"]};

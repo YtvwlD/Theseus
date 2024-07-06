@@ -108,7 +108,8 @@ impl ConnectX3Nic {
             &mut command_interface, &mut nic.doorbells, &caps, &mut offsets,
             memory_regions,
         )?;
-
+        // In the Nautilus driver, CQs and QPs are already allocated here.
+        hca.config_mad_demux(&mut command_interface, &caps)?;
         todo!()
     }
 }

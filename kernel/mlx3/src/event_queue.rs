@@ -90,7 +90,7 @@ impl EventQueue {
         ctx.set_log_page_size(PAGE_SHIFT - ICM_PAGE_SHIFT);
         ctx.set_mtt_base_addr(mtt.try_into().unwrap());
         cmd.execute_command(
-            Opcode::Sw2HwEq, &ctx.bytes[..],
+            Opcode::Sw2HwEq, (), &ctx.bytes[..],
             number.try_into().unwrap(),
         )?;
 
@@ -110,7 +110,7 @@ impl EventQueue {
         self.async_ev_mask = AsyncEventMask::all();
         let unmap = false;
         cmd.execute_command(
-            Opcode::MapEq, self.async_ev_mask.bits(),
+            Opcode::MapEq, (), self.async_ev_mask.bits(),
             ((unmap as u32) << 31) | u32::try_from(self.number).unwrap(),
         )?;
         Ok(())
@@ -120,7 +120,7 @@ impl EventQueue {
     fn unmap(&mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
         let unmap = true;
         cmd.execute_command(
-            Opcode::MapEq, self.async_ev_mask.bits(),
+            Opcode::MapEq, (), self.async_ev_mask.bits(),
             ((unmap as u32) << 31) | u32::try_from(self.number).unwrap(),
         )?;
         self.async_ev_mask = AsyncEventMask::empty();
@@ -136,7 +136,7 @@ impl EventQueue {
             self.unmap(cmd)?;
         }
         cmd.execute_command(
-            Opcode::Hw2SwEq, 0, self.number.try_into().unwrap(),
+            Opcode::Hw2SwEq, (), (), self.number.try_into().unwrap(),
         )?;
         // actually free the memory
         self.memory.take().unwrap();

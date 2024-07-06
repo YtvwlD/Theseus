@@ -30,7 +30,7 @@ impl MappedIcmAuxiliaryArea {
         mut self, cmd: &mut CommandInterface,
     ) -> Result<(), &'static str> {
         trace!("unmapping ICM auxiliary area...");
-        cmd.execute_command(Opcode::UnmapIcmAux, (), 0)?;
+        cmd.execute_command(Opcode::UnmapIcmAux, (), (), 0)?;
         trace!("successfully unmapped ICM auxiliary area");
         // actually free the memory
         self.memory.take().unwrap();
@@ -267,7 +267,9 @@ impl MrTable {
             let mut write_cmd = WriteMttCommand::new();
             write_cmd.set_offset((addr + idx) as u64);
             write_cmd.set_entry((buf.value() + idx * PAGE_SIZE) as u64 | MTT_FLAG_PRESENT);
-            cmd.execute_command(Opcode::WriteMtt, &write_cmd.bytes[..], 1)?;
+            cmd.execute_command(
+                Opcode::WriteMtt, (), &write_cmd.bytes[..], 1,
+            )?;
         }
         Ok(addr)
     }
@@ -318,7 +320,7 @@ impl MappedIcm {
         for _ in 0..count {
             vpm.physical_address.set(phys_pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
             vpm.virtual_address.set(virt_pointer);
-            cmd.execute_command(Opcode::MapIcm, vpm.as_bytes(), 1)?;
+            cmd.execute_command(Opcode::MapIcm, (), vpm.as_bytes(), 1)?;
             phys_pointer += 1 << align;
             virt_pointer += 1 << align;
         }
@@ -330,7 +332,7 @@ impl MappedIcm {
         mut self, cmd: &mut CommandInterface,
     ) -> Result<(), &'static str> {
         cmd.execute_command(
-            Opcode::UnmapIcm, self.card_virtual, self.num_pages,
+            Opcode::UnmapIcm, (), self.card_virtual, self.num_pages,
         )?;
         // actually free the memory
         self.memory.take().unwrap();

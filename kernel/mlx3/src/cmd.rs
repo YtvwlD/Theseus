@@ -3,7 +3,6 @@
 
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use num_enum_derive::IntoPrimitive;
 use strum_macros::{FromRepr, IntoStaticStr};
 use volatile::{Volatile, WriteOnly};
 use zerocopy::{FromBytes, U32, U64};
@@ -15,9 +14,8 @@ const HCR_E_BIT: u32 = 22;
 const HCR_GO_BIT: u32 = 23;
 const POLL_TOKEN: u32 = 0xffff;
 
-// this is actually just u16
-#[repr(u32)]
-#[derive(Debug, IntoPrimitive)]
+#[repr(u16)]
+#[derive(Debug)]
 pub(super) enum Opcode {
     // initialization and general commands
     QueryDevCap = 0x03,
@@ -55,9 +53,41 @@ pub(super) enum Opcode {
 
     // CQ commands
     // QP/EE commands
+
     // special QP and management commands
+    ConfSpecialQp = 0x23,
+    MadIfc = 0x24,
+    MadDemux = 0x203,
+
     // miscellaneous commands
     // Ethernet specific commands
+}
+
+/// a modifier for the opcode
+trait OpcodeModifier {
+    fn get(self) -> u8;
+}
+
+/// No modifier.
+impl OpcodeModifier for () {
+    fn get(self) -> u8 {
+        0
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+/// Modifiers for MadDemux
+pub(super) enum MadDemuxOpcodeModifier {
+    Configure = 0,
+    QueryState = 0x1,
+    QueryRestrictions = 0x2,
+}
+
+impl OpcodeModifier for MadDemuxOpcodeModifier {
+    fn get(self) -> u8 {
+        self as u8
+    }
 }
 
 pub(super) struct CommandInterface<'a> {
@@ -214,10 +244,11 @@ impl<'a> CommandInterface<'a> {
     /// 
     /// This function does not check whether the specified opcode takes the
     /// provided type of input or output.
-    pub(super) fn execute_command<I: InputParameter, O: OutputParameter>(
-        &mut self, opcode: Opcode,
+    pub(super) fn execute_command<M, I, O>(
+        &mut self, opcode: Opcode, opcode_modifier: M,
         input: I, input_modifier: u32,
-    ) -> Result<O, ReturnStatus> {
+    ) -> Result<O, ReturnStatus>
+    where M: OpcodeModifier, I: InputParameter, O: OutputParameter {
         // TODO: timeout
         trace!("executing command: {opcode:?}");
 
@@ -243,8 +274,8 @@ impl<'a> CommandInterface<'a> {
             (1 << HCR_GO_BIT)
             | (self.exp_toggle << HCR_T_BIT)
             | (0 << HCR_E_BIT) // TODO: event
-            | (0 << HCR_OPMOD_SHIFT) // TODO: opcode modifier
-            | u32::from(opcode)
+            | ((opcode_modifier.get() as u32) << HCR_OPMOD_SHIFT)
+            | opcode as u16 as u32
         ).into());
         self.exp_toggle ^= 1;
 

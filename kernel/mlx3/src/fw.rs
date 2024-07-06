@@ -9,7 +9,7 @@ use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, 
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::{CommandInterface, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
+use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
 
 pub(super) const PAGE_SHIFT: u8 = 12;
 
@@ -31,7 +31,9 @@ pub(super) struct Firmware {
 impl Firmware {
     pub(super) fn query(cmd: &mut CommandInterface) -> Result<Self, &'static str> {
         trace!("asking the card to provide information about its firmware...");
-        let page: MappedPages = cmd.execute_command(Opcode::QueryFw, (), 0)?;
+        let page: MappedPages = cmd.execute_command(
+            Opcode::QueryFw, (), (), 0,
+        )?;
         let mut fw = page.as_type::<Firmware>(0)?.clone();
         fw.clr_int_bar = (fw.clr_int_bar >> 6) * 2;
         trace!("got firmware info: {fw:?}");
@@ -60,7 +62,7 @@ impl Firmware {
         let mut pointer = physical;
         for _ in 0..count {
             vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            cmd.execute_command(Opcode::MapFa, vpm.as_bytes(), 1)?;
+            cmd.execute_command(Opcode::MapFa, (), vpm.as_bytes(), 1)?;
             pointer += 1 << align;
         }
         trace!("mapped {} pages for firmware area", self.pages);
@@ -109,13 +111,15 @@ pub(super) struct MappedFirmwareArea {
 
 impl MappedFirmwareArea {
     pub(super) fn run(&self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
-        cmd.execute_command(Opcode::RunFw, (), 0)?;
+        cmd.execute_command(Opcode::RunFw, (), (), 0)?;
         trace!("successfully run firmware");
         Ok(())
     }
 
      pub(super) fn query_capabilities(&self, cmd: &mut CommandInterface) -> Result<Capabilities, &'static str> {
-        let page: MappedPages = cmd.execute_command(Opcode::QueryDevCap, (), 0)?;
+        let page: MappedPages = cmd.execute_command(
+            Opcode::QueryDevCap, (), (), 0,
+        )?;
         let mut caps = Capabilities::from_bytes(page.as_slice(
             0, size_of::<Capabilities>()
         )?.try_into().unwrap());
@@ -142,7 +146,7 @@ impl MappedFirmwareArea {
                 .unwrap()
         }
         trace!("unmapping firmware area...");
-        cmd.execute_command(Opcode::UnmapFa, (), 0)?;
+        cmd.execute_command(Opcode::UnmapFa, (), (), 0)?;
         trace!("successfully unmapped firmware area");
         // actually free the memory
         self.memory.take().unwrap();
@@ -153,7 +157,9 @@ impl MappedFirmwareArea {
     /// 
     /// Returns `aux_pages`, the auxiliary ICM size in pages.
     pub(crate) fn set_icm(&self, cmd: &mut CommandInterface, icm_size: u64) -> Result<u64, &'static str> {
-        let aux_pages = cmd.execute_command(Opcode::SetIcmSize, icm_size, 0)?;
+        let aux_pages = cmd.execute_command(
+            Opcode::SetIcmSize, (), icm_size, 0,
+        )?;
         // TODO: round up number of system pages needed if ICM_PAGE_SIZE < PAGE_SIZE
         trace!("ICM auxilliary area requires {aux_pages} 4K pages");
         Ok(aux_pages)
@@ -187,7 +193,7 @@ impl MappedFirmwareArea {
         let mut pointer = physical;
         for _ in 0..count {
             vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            cmd.execute_command(Opcode::MapIcmAux, vpm.as_bytes(), 1)?;
+            cmd.execute_command(Opcode::MapIcmAux, (), vpm.as_bytes(), 1)?;
             pointer += 1 << align;
         }
         trace!("mapped {} pages for ICM auxiliary area", aux_pages);
@@ -729,7 +735,7 @@ impl InitHcaParameters {
         self.set_uar_log_sz(DEFAULT_UAR_PAGE_SHIFT - PAGE_SHIFT);
         
         // execute the command
-        cmd.execute_command(Opcode::InitHca, &self.bytes[..], 0)?;
+        cmd.execute_command(Opcode::InitHca, (), &self.bytes[..], 0)?;
         trace!("HCA initialized");
         Ok(Hca { initialized: true, })
     }
@@ -870,7 +876,7 @@ impl Hca {
         mut self, cmd: &mut CommandInterface,
     ) -> Result<(), &'static str> {
         trace!("Closing HCA...");
-        cmd.execute_command(Opcode::CloseHca, (), 0)?;
+        cmd.execute_command(Opcode::CloseHca, (), (), 0)?;
         self.initialized = false;
         trace!("HCA closed successfully");
         Ok(())
@@ -880,11 +886,31 @@ impl Hca {
         &self, cmd: &mut CommandInterface,
     ) -> Result<Adapter, &'static str> {
         let page: MappedPages = cmd.execute_command(
-            Opcode::QueryAdapter, (), 0,
+            Opcode::QueryAdapter, (), (), 0,
         )?;
         Ok(Adapter::from_bytes(page.as_slice(
             0, size_of::<Adapter>(),
         )?.try_into().unwrap()))
+    }
+    
+    pub(super) fn config_mad_demux(
+        &self, cmd: &mut CommandInterface, caps: &Capabilities,
+    ) -> Result<(), &'static str> {
+        // TODO: check if mad_demux is supported
+
+        // Query mad_demux to find out which MADs are handled by internal sma
+        const SUBNET_MANAGEMENT_CLASS: u32 = 0x1;
+        let page: MappedPages = cmd.execute_command(
+            Opcode::MadDemux, MadDemuxOpcodeModifier::QueryRestrictions,
+            (), SUBNET_MANAGEMENT_CLASS,
+        )?;
+        // TODO: create a struct for this
+        // Config mad_demux to handle all MADs returned by the query above
+        cmd.execute_command(
+            Opcode::MadDemux, MadDemuxOpcodeModifier::Configure,
+            page.as_slice(0, PAGE_SIZE)?, SUBNET_MANAGEMENT_CLASS,
+        )?;
+        Ok(())
     }
 }
 

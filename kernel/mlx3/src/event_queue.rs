@@ -3,10 +3,10 @@
 
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
+use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
 
-use crate::{cmd::{CommandInterface, Opcode}, icm::ICM_PAGE_SHIFT};
+use crate::{cmd::{CommandInterface, Opcode}, fw::DoorbellPage, icm::ICM_PAGE_SHIFT};
 
 use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
 
@@ -14,7 +14,7 @@ use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
 /// This creates all of the EQs ahead of time,
 /// passes their ownership to the hardware and calls MapEq.
 pub(super) fn init_eqs(
-    cmd: &mut CommandInterface, user_access_region: &mut MappedPages,
+    cmd: &mut CommandInterface, doorbells: &mut [MappedPages],
     caps: &Capabilities, offsets: &mut Offsets, memory_regions: &mut MrTable,
 ) -> Result<Vec<EventQueue>, &'static str> {
     const NUM_EQS: usize = 1;
@@ -22,12 +22,13 @@ pub(super) fn init_eqs(
     for _ in 0..NUM_EQS {
         // TODO: use interrupts here
         let eq = EventQueue::new(
-            cmd, user_access_region, caps, offsets, memory_regions, None,
+            cmd, caps, offsets, memory_regions, None,
         )?;
         eqs.push(eq);
     }
     // map all events to the first (and only) event queue
     eqs[0].map(cmd)?;
+    eqs[0].ring(doorbells, true)?;
     Ok(eqs)
 }
 
@@ -38,13 +39,11 @@ pub(super) struct EventQueue {
     num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
     mtt: usize,
-    doorbell: VirtualAddress,
-    consumer_index: usize,
+    consumer_index: u32,
     /// IRQ number on bus
     intr_vector: Option<u8>,
     /// IRQ we will see
     base_vector: Option<u8>,
-    uar_map: VirtualAddress,
     /// event bitmask
     async_ev_mask: AsyncEventMask,
 }
@@ -53,8 +52,7 @@ impl EventQueue {
     // Create a new event queue. If `base_vector` is given, it will be interrupt
     // driven, else it will be polled.
     fn new(
-        cmd: &mut CommandInterface, user_access_region: &mut MappedPages,
-        caps: &Capabilities, offsets: &mut Offsets,
+        cmd: &mut CommandInterface, caps: &Capabilities, offsets: &mut Offsets,
         memory_regions: &mut MrTable, base_vector: Option<u8>,
     ) -> Result<Self, &'static str> {
         // EQE size is 32. There is 64 B support also available in CX3.
@@ -73,13 +71,6 @@ impl EventQueue {
         let memory = create_contiguous_mapping(
             num_pages * PAGE_SIZE + EQE_SIZE - 1, DMA_FLAGS,
         )?;
-        // this assumes we only have *one* EQ which is not a reserved eq!
-        // each uar has 4 eq doorbells if uar is reserved even eq cannot be used
-        let uar_map = user_access_region
-            .address_at_offset((number / 4) << PAGE_SHIFT)
-            .ok_or("failed to get UAR")?;
-        let doorbell = uar_map + (0x800 + 8 * (number % 4));
-        // TODO: pass pages here
         let mtt = memory_regions.alloc_mtt(cmd, caps, num_pages, memory.1)?;
         // TODO: register interrupt correctly
         // TODO: Should use MSI-X instead of legacy INTs
@@ -105,8 +96,8 @@ impl EventQueue {
 
         let async_ev_mask = AsyncEventMask::empty();
         let eq = Self {
-            number, num_entries, num_pages, memory: Some(memory), mtt, doorbell,
-            consumer_index, intr_vector, base_vector, uar_map, async_ev_mask,
+            number, num_entries, num_pages, memory: Some(memory), mtt,
+            consumer_index, intr_vector, base_vector, async_ev_mask,
         };
         trace!("created new EQ: {:?}", eq);
         Ok(eq)
@@ -149,6 +140,23 @@ impl EventQueue {
         )?;
         // actually free the memory
         self.memory.take().unwrap();
+        Ok(())
+    }
+    
+    /// Ring this event queue by writing the consumer index to the appropriate
+    /// doorbell.
+    /// 
+    /// If armed, events will generate interrupts.
+    fn ring(
+        &mut self, doorbells: &mut [MappedPages], arm: bool,
+    ) -> Result<(), &'static str> {
+        // for the EQ number n the relevant doorbell is in
+        // DoorbellPage (n / 4) and eq (n % 4)
+        let doorbell: &mut DoorbellPage = doorbells[self.number / 4]
+            .as_type_mut(0)?;
+        doorbell.eqs[self.number % 4].val.write(
+            ((self.consumer_index & 0xffffff) | (arm as u32) << 31).into()
+        );
         Ok(())
     }
 

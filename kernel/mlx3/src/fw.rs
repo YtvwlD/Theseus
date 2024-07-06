@@ -2,10 +2,12 @@
 
 use core::mem::size_of;
 
+use alloc::vec::Vec;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, B2, B20, B22, B24, B25, B27, B3, B31, B36, B4, B42, B45, B5, B6, B63, B7, B72, B88, B91}};
-use zerocopy::{AsBytes, FromBytes, U16, U64};
+use volatile::WriteOnly;
+use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
 use crate::{cmd::{CommandInterface, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
 
@@ -437,6 +439,30 @@ impl Capabilities {
     fn uar_size(&self) -> u64 {
         1 << (self.uar_sz() + 20)
     }
+
+    pub(super) fn get_doorbells_and_blueflame(
+        &self, uar: MappedPages,
+    ) -> Result<(Vec<MappedPages>, Vec<MappedPages>), &'static str> {
+        let mut doorbells = Vec::new();
+        let mut blueflame = Vec::new();
+        let mut rest = uar;
+        let mut idx = 0;
+        while rest.size_in_pages() > 1 {
+            let next_page = *rest.start() + 1;
+            let split = rest
+                .split(next_page)
+                .map_err(|_| "failed to split UAR")?;
+            if idx <= self.num_uars() {
+                doorbells.push(split.0);
+            } else {
+                blueflame.push(split.0)
+            }
+            rest = split.1;
+            idx += 1;
+        }
+
+        Ok((doorbells, blueflame))
+    }
 }
 
 impl core::fmt::Debug for Capabilities {
@@ -527,6 +553,38 @@ impl core::fmt::Debug for Capabilities {
             .field("FCoE T11 frame support", &self.fcoe_t11())
             .finish()
     }
+}
+
+#[derive(FromBytes)]
+#[repr(C, packed)]
+pub(super) struct DoorbellEq {
+    pub(super) val: WriteOnly<U32<BigEndian>>,
+    _padding: u32,
+}
+
+#[derive(FromBytes)]
+#[repr(C, packed)]
+pub(super) struct DoorbellPage {
+    _padding1: u128,
+    _padding2: u32,
+    send_queue_number: WriteOnly<U32<BigEndian>>,
+    _padding3: u64,
+
+    // CQ
+    /// contains the sequence number, the command and the cq number
+    cq_sn_cmd_num: WriteOnly<U32<BigEndian>>,
+    cq_consumer_index: WriteOnly<U32<BigEndian>>,
+
+    // skip 502 u32
+    _padding4: [u32; 502],
+
+    // EQ
+    // for the EQ number n the relevant doorbell is in
+    // DoorbellPage (n / 4) and eq (n % 4)
+    pub(super) eqs: [DoorbellEq; 4],
+
+    // skip 503 u32
+    _padding9: [u32; 503],
 }
 
 #[bitfield]

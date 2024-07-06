@@ -40,6 +40,8 @@ pub struct ConnectX3Nic {
     firmware_area: Option<MappedFirmwareArea>,
     icm_tables: Option<MappedIcmTables>,
     hca: Option<Hca>,
+    doorbells: Vec<MappedPages>,
+    blueflame: Vec<MappedPages>,
     eqs: Vec<EventQueue>,
 }
 
@@ -59,7 +61,7 @@ impl ConnectX3Nic {
         let mut config_regs = mlx3_pci_dev.pci_map_bar_mem(0)?;
         trace!("mlx3 configuration registers: {:?}", config_regs);
         // map the User Access Region
-        let mut user_access_region = mlx3_pci_dev.pci_map_bar_mem(2)?;
+        let user_access_region = mlx3_pci_dev.pci_map_bar_mem(2)?;
         trace!("mlx3 user access region: {:?}", user_access_region);
 
         ResetRegisters::reset(mlx3_pci_dev, &mut config_regs)?;
@@ -79,6 +81,8 @@ impl ConnectX3Nic {
             firmware_area: Some(firmware_area),
             icm_tables: None,
             hca: None,
+            doorbells: Vec::new(),
+            blueflame: Vec::new(),
             eqs: Vec::new(),
         };
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
@@ -96,10 +100,14 @@ impl ConnectX3Nic {
         // give us the interrupt pin
         hca.query_adapter(&mut command_interface)?;
         let memory_regions = nic.icm_tables.as_mut().unwrap().memory_regions();
-        nic.eqs.append(&mut init_eqs(
-            &mut command_interface, &mut user_access_region, &caps, &mut offsets,
+        // get the doorbells and the BlueFlame section
+        (nic.doorbells, nic.blueflame) = caps.get_doorbells_and_blueflame(
+            user_access_region
+        )?;
+        nic.eqs = init_eqs(
+            &mut command_interface, &mut nic.doorbells, &caps, &mut offsets,
             memory_regions,
-        )?);
+        )?;
 
         todo!()
     }

@@ -6,7 +6,7 @@ use strum_macros::FromRepr;
 use crate::cmd::{CommandInterface, MadIfcOpcodeModifier, Opcode, SetPortOpcodeModifier};
 
 #[derive(Debug)]
-pub(super) struct Port {
+pub struct Port {
     number: u8,
     open: bool,
     capabilities: Option<PortCapabilities>,
@@ -87,6 +87,19 @@ impl Port {
                 .unwrap()
         ));
         Ok(())
+    }
+    
+    /// Get statistics about this port.
+    /// 
+    /// This is a bit similar to libibumad's `get_port`.
+    pub(crate) fn get_stats(
+        &mut self, cmd: &mut CommandInterface,
+    ) -> Result<PortStats, &'static str> {
+        self.query(cmd)?;
+        Ok(PortStats {
+            number: self.number,
+            link_up: self.capabilities.as_ref().unwrap().link_up(),
+        })
     }
 }
 
@@ -169,4 +182,12 @@ impl Debug for PortCapabilities {
             .field("Port MAC", &self.mac())
             .finish()
     }
+}
+
+/// Statistics about the port
+/// 
+/// This is a bit similar to libibumad's `umad_port_t`.
+pub struct PortStats {
+    pub number: u8,
+    pub link_up: bool,
 }

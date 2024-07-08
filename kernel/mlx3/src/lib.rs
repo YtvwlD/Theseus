@@ -24,7 +24,7 @@ use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
-use port::Port;
+use port::{Port, PortStats};
 use spin::Once; 
 use sync_irq::IrqSafeMutex;
 
@@ -130,6 +130,19 @@ impl ConnectX3Nic {
         let nic_ref = CONNECTX3_NIC.call_once(|| IrqSafeMutex::new(nic));
         Ok(nic_ref)
     }
+
+    /// Get statistics about the device.
+    /// 
+    /// This is a bit similar to libibumad's `get_ca`.
+    pub fn get_stats(&mut self) -> Result<Stats, &'static str> {
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        let name = "mlx3_0";
+        let mut stat_ports = Vec::with_capacity(self.ports.len());
+        for port in &mut self.ports {
+            stat_ports.push(port.get_stats(&mut cmd)?)
+        }
+        Ok(Stats { name, ports: stat_ports, })
+    }
 }
 
 impl Drop for ConnectX3Nic {
@@ -162,4 +175,12 @@ impl Drop for ConnectX3Nic {
                 .unwrap()
         }
     }
+}
+
+/// Statistics about this device
+/// 
+/// This is a bit similar to libibumad's `umad_ca_t`.
+pub struct Stats {
+    pub name: &'static str,
+    pub ports: Vec<PortStats>,
 }

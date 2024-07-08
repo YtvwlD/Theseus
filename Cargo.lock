@@ -2131,6 +2131,7 @@ dependencies = [
  "modular-bitfield-msb",
  "pci",
  "sleep",
+ "spin 0.9.4",
  "strum",
  "strum_macros",
  "sync_irq",

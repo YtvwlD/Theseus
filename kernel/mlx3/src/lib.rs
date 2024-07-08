@@ -25,6 +25,7 @@ use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
 use port::Port;
+use spin::Once; 
 use sync_irq::IrqSafeMutex;
 
 use crate::device::{Ownership, ResetRegisters};
@@ -35,6 +36,16 @@ use crate::profile::Profile;
 pub const MLX_VEND: u16 = 0x15b3;
 /// Device ID for the ConnectX-3 NIC
 pub const CONNECTX3_DEV: u16 = 0x1003;
+
+/// The singleton connectx-3 NIC.
+/// TODO: Allow for multiple NICs
+static CONNECTX3_NIC: Once<IrqSafeMutex<ConnectX3Nic>> = Once::new();
+
+/// Returns a reference to the NIC wrapped in a IrqSafeMutex,
+/// if it exists and has been initialized.
+pub fn get_mlx3_nic() -> Option<&'static IrqSafeMutex<ConnectX3Nic>> {
+    CONNECTX3_NIC.get()
+}
 
 /// Struct representing a ConnectX-3 card
 pub struct ConnectX3Nic {
@@ -115,7 +126,9 @@ impl ConnectX3Nic {
         // In the Nautilus driver, CQs and QPs are already allocated here.
         hca.config_mad_demux(&mut command_interface, &caps)?;
         nic.ports = hca.init_ports(&mut command_interface, &caps)?;
-        todo!()
+
+        let nic_ref = CONNECTX3_NIC.call_once(|| IrqSafeMutex::new(nic));
+        Ok(nic_ref)
     }
 }
 

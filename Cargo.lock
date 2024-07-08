@@ -1551,6 +1551,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ibstat"
+version = "0.1.0"
+dependencies = [
+ "app_io",
+]
+
+[[package]]
 name = "idle"
 version = "0.1.0"
 dependencies = [
@@ -4062,6 +4069,7 @@ dependencies = [
  "heap_eval",
  "hello",
  "hull",
+ "ibstat",
  "kill",
  "libtest",
  "loadc",

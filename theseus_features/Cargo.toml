@@ -17,6 +17,7 @@ cat = { path = "../applications/cat", optional = true }
 cd = { path = "../applications/cd", optional = true }
 date = { path = "../applications/date", optional = true }
 deps = { path = "../applications/deps", optional = true }
+ibstat = { path = "../applications/ibstat", optional = true }
 hull = { path = "../applications/hull", optional = true }
 kill = { path = "../applications/kill", optional = true }
 loadc = { path = "../applications/loadc", optional = true }
@@ -113,6 +114,7 @@ theseus_apps = [
     "date",
     "deps",
     "hull",
+    "ibstat",
     "kill",
     "loadc",
     "ls",

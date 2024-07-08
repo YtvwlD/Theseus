@@ -9,7 +9,7 @@ use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, 
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}};
+use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}, port::{Mtu, Port}};
 
 pub(super) const PAGE_SHIFT: u8 = 12;
 
@@ -911,6 +911,17 @@ impl Hca {
             page.as_slice(0, PAGE_SIZE)?, SUBNET_MANAGEMENT_CLASS,
         )?;
         Ok(())
+    }
+    
+    pub(crate) fn init_ports(
+        &self, cmd: &mut CommandInterface, caps: &Capabilities,
+    ) -> Result<Vec<Port>, &'static str> {
+        let mut ports = Vec::with_capacity(caps.num_ports().into());
+        for number in 1..=caps.num_ports() {
+            let port = Port::new(cmd, number, Mtu::Mtu4096, None)?;
+            ports.push(port);
+        }
+        Ok(ports)
     }
 }
 

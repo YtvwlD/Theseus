@@ -1,6 +1,7 @@
 //! This module consists of functions to create a direct memory access mailbox for passing parameters to the hca
 //! and getting output back from the hca during verb calls and functions to execute verb calls.
 
+use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use strum_macros::{FromRepr, IntoStaticStr};
@@ -85,6 +86,34 @@ pub(super) enum MadDemuxOpcodeModifier {
 }
 
 impl OpcodeModifier for MadDemuxOpcodeModifier {
+    fn get(self) -> u8 {
+        self as u8
+    }
+}
+
+bitflags! {
+    /// Modifiers for MadIfc
+    pub(super) struct MadIfcOpcodeModifier: u8 {
+        const DISABLE_MKEY_VALIDATION = 1 << 0;
+        const DISABLE_BKEY_VALIDATION = 1 << 1;
+    }
+}
+
+impl OpcodeModifier for MadIfcOpcodeModifier {
+    fn get(self) -> u8 {
+        self.bits()
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub(super) enum SetPortOpcodeModifier {
+    IB = 0x0,
+    ETH = 0x1,
+    BEACON = 0x4,
+}
+
+impl OpcodeModifier for SetPortOpcodeModifier {
     fn get(self) -> u8 {
         self as u8
     }

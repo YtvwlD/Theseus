@@ -12,6 +12,7 @@ mod event_queue;
 mod fw;
 mod icm;
 mod mcg;
+mod port;
 mod profile;
 
 #[macro_use] extern crate log;
@@ -23,6 +24,7 @@ use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
+use port::Port;
 use sync_irq::IrqSafeMutex;
 
 use crate::device::{Ownership, ResetRegisters};
@@ -43,6 +45,7 @@ pub struct ConnectX3Nic {
     doorbells: Vec<MappedPages>,
     blueflame: Vec<MappedPages>,
     eqs: Vec<EventQueue>,
+    ports: Vec<Port>,
 }
 
 /// Functions that setup the struct.
@@ -84,6 +87,7 @@ impl ConnectX3Nic {
             doorbells: Vec::new(),
             blueflame: Vec::new(),
             eqs: Vec::new(),
+            ports: Vec::new(),
         };
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
         let firmware_area = nic.firmware_area.as_mut().unwrap();
@@ -110,6 +114,7 @@ impl ConnectX3Nic {
         )?;
         // In the Nautilus driver, CQs and QPs are already allocated here.
         hca.config_mad_demux(&mut command_interface, &caps)?;
+        nic.ports = hca.init_ports(&mut command_interface, &caps)?;
         todo!()
     }
 }
@@ -118,6 +123,11 @@ impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
         let mut cmd = CommandInterface::new(&mut self.config_regs)
             .expect("failed to get command interface");
+        while let Some(port) = self.ports.pop() {
+            port
+                .close(&mut cmd)
+                .unwrap()
+        }
         while let Some(eq) = self.eqs.pop() {
             eq
                 .destroy(&mut cmd)

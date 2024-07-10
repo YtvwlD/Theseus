@@ -8,6 +8,7 @@ use crate::cmd::{CommandInterface, MadIfcOpcodeModifier, Opcode, SetPortOpcodeMo
 #[derive(Debug)]
 pub struct Port {
     number: u8,
+    capability_mask: u32,
     open: bool,
     capabilities: Option<PortCapabilities>,
 }
@@ -33,11 +34,11 @@ impl Port {
         let madifc_output: MappedPages = cmd.execute_command(
             Opcode::MadIfc, madifc_modifier, &madifc_input[..], number.into(),
         )?;
-        let caps: u32 = *madifc_output.as_type(84)?;
+        let capability_mask: u32 = *madifc_output.as_type(84)?;
 
         // set them
         let mut set_port_input = SetPortCommand::new();
-        set_port_input.set_capabilities(caps);
+        set_port_input.set_capabilities(capability_mask);
         if let Some(size) = pkey_table_size {
             set_port_input.set_change_port_pkey(true);
             set_port_input.set_max_pkey(size);
@@ -54,7 +55,9 @@ impl Port {
         }
 
         // get the current state
-        let mut port = Self { number, open: false, capabilities: None, };
+        let mut port = Self {
+            number, capability_mask, open: false, capabilities: None,
+        };
         port.query(cmd)?;
 
         // finally, bring the port up
@@ -99,6 +102,8 @@ impl Port {
         Ok(PortStats {
             number: self.number,
             link_up: self.capabilities.as_ref().unwrap().link_up(),
+            capability_mask: self.capability_mask,
+            layer: PortStatsLayer::Infiniband,
         })
     }
 }
@@ -190,4 +195,9 @@ impl Debug for PortCapabilities {
 pub struct PortStats {
     pub number: u8,
     pub link_up: bool,
+    pub capability_mask: u32,
+    pub layer: PortStatsLayer,
 }
+
+#[derive(Debug)]
+pub enum PortStatsLayer { Infiniband, Ethernet }

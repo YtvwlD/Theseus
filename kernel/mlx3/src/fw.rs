@@ -17,9 +17,9 @@ pub(super) const PAGE_SHIFT: u8 = 12;
 #[repr(C, packed)]
 pub(super) struct Firmware {
     pages: U16<BigEndian>,
-    major: U16<BigEndian>,
-    sub_minor: U16<BigEndian>,
-    minor: U16<BigEndian>,
+    pub(super) major: U16<BigEndian>,
+    pub(super) sub_minor: U16<BigEndian>,
+    pub(super) minor: U16<BigEndian>,
     _padding1: u16,
     ix_rev: U16<BigEndian>,
     _padding2: [u8; 22], // contains the build timestamp
@@ -40,7 +40,7 @@ impl Firmware {
         Ok(fw)
     }
     
-    pub(super) fn map_area(self, cmd: &mut CommandInterface) -> Result<MappedFirmwareArea, &'static str> {
+    pub(super) fn map_area(&self, cmd: &mut CommandInterface) -> Result<MappedFirmwareArea, &'static str> {
         const MAX_CHUNK_LOG2: u32 = 18;
         trace!("mapping firmware area...");
 

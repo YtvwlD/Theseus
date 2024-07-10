@@ -50,6 +50,7 @@ pub fn get_mlx3_nic() -> Option<&'static IrqSafeMutex<ConnectX3Nic>> {
 /// Struct representing a ConnectX-3 card
 pub struct ConnectX3Nic {
     config_regs: MappedPages,
+    firmware: Firmware,
     firmware_area: Option<MappedFirmwareArea>,
     icm_tables: Option<MappedIcmTables>,
     hca: Option<Hca>,
@@ -92,6 +93,7 @@ impl ConnectX3Nic {
         let firmware_area = firmware.map_area(&mut command_interface)?;
         let mut nic = Self {
             config_regs,
+            firmware,
             firmware_area: Some(firmware_area),
             icm_tables: None,
             hca: None,
@@ -137,11 +139,16 @@ impl ConnectX3Nic {
     pub fn get_stats(&mut self) -> Result<Stats, &'static str> {
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
         let name = "mlx3_0";
+        let firmware_version = (
+            self.firmware.major.get(),
+            self.firmware.minor.get(),
+            self.firmware.sub_minor.get(),
+        );
         let mut stat_ports = Vec::with_capacity(self.ports.len());
         for port in &mut self.ports {
             stat_ports.push(port.get_stats(&mut cmd)?)
         }
-        Ok(Stats { name, ports: stat_ports, })
+        Ok(Stats { name, firmware_version, ports: stat_ports, })
     }
 }
 
@@ -182,5 +189,6 @@ impl Drop for ConnectX3Nic {
 /// This is a bit similar to libibumad's `umad_ca_t`.
 pub struct Stats {
     pub name: &'static str,
+    pub firmware_version: (u16, u16, u16),
     pub ports: Vec<PortStats>,
 }

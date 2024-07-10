@@ -13,6 +13,13 @@ pub fn main(_args: Vec<String>) -> isize {
             .get_stats()
             .expect("failed to get data from NIC");
         println!("CA '{}'", stats.name);
+        println!("    Number of ports: {}", stats.ports.len());
+        println!(
+            "    Firmware version: {}.{}.{}",
+            stats.firmware_version.0,
+            stats.firmware_version.1,
+            stats.firmware_version.2,
+        );
         for port in stats.ports {
             println!("    Port {}:", port.number);
             let state = match port.link_up {
@@ -20,6 +27,8 @@ pub fn main(_args: Vec<String>) -> isize {
                 false => "Down",
             };
             println!("        State: {state}");
+            println!("        Capability mask: 0x{:x}", port.capability_mask);
+            println!("        Link layer: {:?}", port.layer);
         }
     }
     0

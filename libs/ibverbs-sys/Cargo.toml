@@ -1,5 +1,5 @@
 [package]
-name = "test_ibverbs"
+name = "ibverbs-sys"
 version = "0.1.0"
 edition = "2021"
 authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
@@ -7,5 +7,3 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-app_io = { path = "../../kernel/app_io" }
-ibverbs = { path = "../../libs/ibverbs", default-features = false }

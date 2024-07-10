@@ -3871,6 +3871,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_ibverbs"
+version = "0.1.0"
+dependencies = [
+ "app_io",
+]
+
+[[package]]
 name = "test_identity_mapping"
 version = "0.1.0"
 dependencies = [
@@ -4099,6 +4106,7 @@ dependencies = [
  "test_block_io",
  "test_channel",
  "test_filerw",
+ "test_ibverbs",
  "test_identity_mapping",
  "test_ixgbe",
  "test_libc",

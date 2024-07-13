@@ -13,6 +13,7 @@ mod fw;
 mod icm;
 mod mcg;
 mod port;
+pub use port::Mtu;
 mod profile;
 
 #[macro_use] extern crate log;

@@ -36,13 +36,13 @@ bitflags! {
 }
 
 pub struct ibv_context_ops {
-    pub poll_cq: Option<fn(
+    pub poll_cq: Option<unsafe fn(
         *mut ibv_cq, i32, *mut ibv_wc,
     ) -> i32>,
-    pub post_send: Option<fn(
+    pub post_send: Option<unsafe fn(
         *mut ibv_qp, *mut ibv_send_wr, *mut *mut ibv_send_wr,
     ) -> i32>,
-    pub post_recv: Option<fn(
+    pub post_recv: Option<unsafe fn(
         *mut ibv_qp, *mut ibv_recv_wr, *mut *mut ibv_recv_wr,
     ) -> i32>,
 }
@@ -218,7 +218,7 @@ pub enum ibv_send_flags {
 /// 
 /// Return a NULL-terminated array of IB devices.  The array can be
 /// released with ibv_free_device_list().
-pub fn ibv_get_device_list(num_devices: *mut i32) -> *mut *mut ibv_device {
+pub unsafe fn ibv_get_device_list(num_devices: *mut i32) -> *mut *mut ibv_device {
     todo!()
 }
 
@@ -228,12 +228,12 @@ pub fn ibv_get_device_list(num_devices: *mut i32) -> *mut *mut ibv_device {
 /// the array is freed, pointers to devices that were not opened with
 /// ibv_open_device() are no longer valid.  Client code must open all
 /// devices it intends to use before calling ibv_free_device_list().
-pub fn ibv_free_device_list(list: *mut *mut ibv_device) {
+pub unsafe fn ibv_free_device_list(list: *mut *mut ibv_device) {
     todo!()
 }
 
 /// Return kernel device name
-pub fn ibv_get_device_name(device: *mut ibv_device) -> *const i8 {
+pub unsafe fn ibv_get_device_name(device: *mut ibv_device) -> *const i8 {
     todo!()
 }
 
@@ -242,59 +242,59 @@ pub fn ibv_get_device_name(device: *mut ibv_device) -> *const i8 {
 /// Available for the kernel with support of IB device query
 /// over netlink interface. For the unsupported kernels, the
 /// relevant -1 will be returned.
-pub fn ibv_get_device_index(device: *mut ibv_device) -> i32 {
+pub unsafe fn ibv_get_device_index(device: *mut ibv_device) -> i32 {
     -1
 }
 
 /// Return device's node GUID
-pub fn ibv_get_device_guid(device: *mut ibv_device) -> __be64 {
+pub unsafe fn ibv_get_device_guid(device: *mut ibv_device) -> __be64 {
     todo!()
 }
 
 
 /// Initialize device for use
-pub fn ibv_open_device(device: *mut ibv_device) -> *mut ibv_context {
+pub unsafe fn ibv_open_device(device: *mut ibv_device) -> *mut ibv_context {
     todo!()
 }
 
 /// Release device
-pub fn ibv_close_device(context: *mut ibv_context) -> i32 {
+pub unsafe fn ibv_close_device(context: *mut ibv_context) -> i32 {
     todo!()
 }
 
 /// Get port properties
-pub fn ibv_query_port(
+pub unsafe fn ibv_query_port(
     context: *mut ibv_context, port_num: u8, port_attr: *mut ibv_port_attr,
 ) -> i32 {
     todo!()
 }
 
 /// Get a GID table entry
-pub fn ibv_query_gid(
+pub unsafe fn ibv_query_gid(
     context: *mut ibv_context, port_num: u8, index: i32, gid: *mut ibv_gid,
 ) -> i32 {
     todo!()
 }
 
 /// Allocate a protection domain
-pub fn ibv_alloc_pd(context: *mut ibv_context) -> *mut ibv_pd {
+pub unsafe fn ibv_alloc_pd(context: *mut ibv_context) -> *mut ibv_pd {
     todo!()
 }
 
 /// Free a protection domain
-pub fn ibv_dealloc_pd(pd: *mut ibv_pd) -> i32 {
+pub unsafe fn ibv_dealloc_pd(pd: *mut ibv_pd) -> i32 {
     todo!()
 }
 
 /// Register a memory region
-pub fn ibv_reg_mr(
+pub unsafe fn ibv_reg_mr(
     pd: *mut ibv_pd, addr: *mut (), length: usize, access: ibv_access_flags,
 ) -> *mut ibv_mr {
     todo!()
 }
 
 /// Deregister a memory region
-pub fn ibv_dereg_mr(mr: *mut ibv_mr) -> i32 {
+pub unsafe fn ibv_dereg_mr(mr: *mut ibv_mr) -> i32 {
     todo!()
 }
 
@@ -307,7 +307,7 @@ pub fn ibv_dereg_mr(mr: *mut ibv_mr) -> i32 {
 ///     May be NULL if completion events will not be used.
 /// @comp_vector - Completion vector used to signal completion events.
 ///     Must be >= 0 and < context->num_comp_vectors.
-pub fn ibv_create_cq(
+pub unsafe fn ibv_create_cq(
     context: *mut ibv_context, cqe: i32, cq_context: *mut (),
     channel: *mut (), comp_vector: i32,
 ) -> *mut ibv_cq {
@@ -315,26 +315,26 @@ pub fn ibv_create_cq(
 }
 
 /// Destroy a completion queue
-pub fn ibv_destroy_cq(cq: *mut ibv_cq) -> i32 {
+pub unsafe fn ibv_destroy_cq(cq: *mut ibv_cq) -> i32 {
     todo!()
 }
 
 /// Create a queue pair.
-pub fn ibv_create_qp(
+pub unsafe fn ibv_create_qp(
     pd: *mut ibv_pd, qp_init_attr: *mut ibv_qp_init_attr,
 ) -> *mut ibv_qp {
     todo!()
 }
 
 /// Modify a queue pair.
-pub fn ibv_modify_qp(
+pub unsafe fn ibv_modify_qp(
     qp: *mut ibv_qp, attr: *mut ibv_qp_attr, attr_mask: ibv_qp_attr_mask,
 ) -> i32 {
     todo!()
 }
 
 /// Destroy a queue pair.
-pub fn ibv_destroy_qp(qp: *mut ibv_qp) -> i32 {
+pub unsafe fn ibv_destroy_qp(qp: *mut ibv_qp) -> i32 {
     todo!()
 }
 

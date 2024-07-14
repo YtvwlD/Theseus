@@ -9,7 +9,7 @@ use bitflags::bitflags;
 pub use mlx3::Mtu as ibv_mtu;
 
 pub mod ibv_qp_type {
-    #[derive(PartialEq)]
+    #[derive(Clone, Copy, PartialEq)]
     pub enum Type {
         IBV_QPT_RC, IBV_QPT_UC, IBV_QPT_UD,
     }
@@ -21,7 +21,7 @@ pub mod ibv_qp_type {
 pub type __be64 = u64;
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Clone, Copy)]
     pub struct ibv_access_flags: i32 {
         const IBV_ACCESS_LOCAL_WRITE = 1;
         const IBV_ACCESS_REMOTE_WRITE = 2;
@@ -48,7 +48,7 @@ pub struct ibv_context_ops {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, PartialEq, Eq)]
     pub struct ibv_port_state: i32 {
         const IBV_PORT_NOP = 0;
         const IBV_PORT_DOWN = 1;
@@ -67,7 +67,7 @@ pub struct ibv_cq {
     pub context: *mut ibv_context,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct ibv_gid {
     pub raw: [u8; 16],
 }

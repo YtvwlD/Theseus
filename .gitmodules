@@ -22,3 +22,7 @@
 	path = libs/core2
 	url = https://github.com/theseus-os/core2.git
 	shallow = true
+[submodule "libs/ibverbs"]
+	path = ports/ibverbs
+	url = https://github.com/YtvwlD/rust-ibverbs.git
+	branch = theseus

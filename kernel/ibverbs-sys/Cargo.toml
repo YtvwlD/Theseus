@@ -7,3 +7,5 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitflags = "2.4.1"
+mlx3 = { path = "../../kernel/mlx3" }

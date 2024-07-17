@@ -117,12 +117,13 @@ impl Drop for Port {
 }
 
 #[repr(u8)]
-#[derive(Debug, FromRepr)]
-pub(super) enum Mtu {
+#[derive(Default, Debug, FromRepr)]
+pub enum Mtu {
     Mtu256 = 1,
     Mtu512 = 2,
     Mtu1024 = 3,
     Mtu2048 = 4,
+    #[default]
     Mtu4096 = 5,
 }
 

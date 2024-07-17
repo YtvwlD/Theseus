@@ -1569,6 +1569,10 @@ dependencies = [
 [[package]]
 name = "ibverbs-sys"
 version = "0.1.0"
+dependencies = [
+ "bitflags 2.4.1",
+ "mlx3",
+]
 
 [[package]]
 name = "idle"

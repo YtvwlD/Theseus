@@ -1,6 +1,9 @@
 #![no_std]
 #![allow(non_camel_case_types)]
 
+extern crate alloc;
+
+use alloc::string::String;
 use bitflags::bitflags;
 use strum_macros::FromRepr;
 
@@ -31,8 +34,13 @@ bitflags! {
     }
 }
 
+pub struct ibv_device_attr {
+    pub fw_ver: String,
+    pub phys_port_cnt: u8,
+}
+
 #[repr(u8)]
-#[derive(Default, Debug, FromRepr)]
+#[derive(Default, Debug, Clone, Copy, FromRepr)]
 pub enum ibv_mtu {
     Mtu256 = 1,
     Mtu512 = 2,
@@ -43,7 +51,7 @@ pub enum ibv_mtu {
 }
 
 bitflags! {
-    #[derive(Default, PartialEq, Eq)]
+    #[derive(Debug, Default, PartialEq, Eq)]
     pub struct ibv_port_state: i32 {
         const IBV_PORT_NOP = 0;
         const IBV_PORT_DOWN = 1;
@@ -72,6 +80,15 @@ bitflags! {
         const IBV_QP_MAX_DEST_RD_ATOMIC = 131072;
         const IBV_QP_DEST_QPN = 1048576;
     }
+}
+
+#[derive(Default)]
+pub struct ibv_port_attr {
+    pub state: ibv_port_state,
+    pub active_mtu: ibv_mtu,
+    pub port_cap_flags: u32,
+    pub lid: u16,
+    pub link_layer: u8,
 }
 
 #[derive(Default)]

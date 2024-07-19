@@ -2,7 +2,7 @@
 
 use core::mem::size_of;
 
-use alloc::vec::Vec;
+use alloc::{format, string::String, vec::Vec};
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use mlx_infiniband::ibv_mtu;
@@ -73,6 +73,11 @@ impl Firmware {
             icm_aux_area: None,
         })
     }
+    
+    /// Format the version as a string.
+    pub(super) fn version(&self) -> String {
+        format!("{}.{}.{}", self.major, self.minor, self.sub_minor)
+    }
 }
 
 impl core::fmt::Debug for Firmware {
@@ -81,7 +86,7 @@ impl core::fmt::Debug for Firmware {
             .debug_struct("Firmware")
             .field("clr_int_bar", &self.clr_int_bar)
             .field("clr_int_base", &format_args!("{:#x}", self.clr_int_base))
-            .field("version", &format_args!("{}.{}.{}", self.major, self.minor, self.sub_minor))
+            .field("version", &self.version())
             .field("ix_rev", &self.ix_rev.get())
             .field("size", &format_args!(
                 "{}.{} KB",

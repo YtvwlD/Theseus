@@ -23,8 +23,9 @@ use event_queue::{init_eqs, EventQueue, Offsets};
 use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
+use mlx_infiniband::{ibv_device_attr, ibv_port_attr};
 use pci::PciDevice;
-use port::{Port, PortStats};
+use port::Port;
 use spin::Once; 
 use sync_irq::IrqSafeMutex;
 
@@ -135,20 +136,25 @@ impl ConnectX3Nic {
 
     /// Get statistics about the device.
     /// 
-    /// This is a bit similar to libibumad's `get_ca`.
-    pub fn get_stats(&mut self) -> Result<Stats, &'static str> {
+    /// This is used by ibv_query_device.
+    pub fn query_device(&mut self) -> Result<ibv_device_attr, &'static str> {
+        Ok(ibv_device_attr {
+            fw_ver: self.firmware.version(),
+            phys_port_cnt: self.ports.len().try_into().unwrap(),
+        })
+    }
+
+    /// Get statistics about a port.
+    /// 
+    /// This is used by ibv_query_port.
+    pub fn query_port(&mut self, port_num: u8) -> Result<ibv_port_attr, &'static str> {
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
-        let name = "mlx3_0";
-        let firmware_version = (
-            self.firmware.major.get(),
-            self.firmware.minor.get(),
-            self.firmware.sub_minor.get(),
-        );
-        let mut stat_ports = Vec::with_capacity(self.ports.len());
-        for port in &mut self.ports {
-            stat_ports.push(port.get_stats(&mut cmd)?)
+        let port: Option<&mut Port> = self.ports.get_mut(port_num as usize - 1);
+        if let Some(port) = port {
+            port.query(&mut cmd)
+        } else {
+            Err("port does not exist")
         }
-        Ok(Stats { name, firmware_version, ports: stat_ports, })
     }
 }
 
@@ -182,13 +188,4 @@ impl Drop for ConnectX3Nic {
                 .unwrap()
         }
     }
-}
-
-/// Statistics about this device
-/// 
-/// This is a bit similar to libibumad's `umad_ca_t`.
-pub struct Stats {
-    pub name: &'static str,
-    pub firmware_version: (u16, u16, u16),
-    pub ports: Vec<PortStats>,
 }

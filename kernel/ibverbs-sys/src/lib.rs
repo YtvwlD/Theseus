@@ -6,11 +6,11 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{string::{String, ToString}, vec::Vec};
 use bitflags::bitflags;
 use core2::io::{Error, ErrorKind, Result as Result};
 use mlx3::{get_mlx3_nic, ConnectX3Nic};
-pub use mlx_infiniband::{__be64, ibv_access_flags, ibv_port_state, ibv_qp_attr_mask, ibv_qp_state, ibv_qp_type};
+pub use mlx_infiniband::{__be64, ibv_access_flags, ibv_device_attr, ibv_mtu, ibv_port_attr, ibv_port_state, ibv_qp_attr_mask, ibv_qp_state, ibv_qp_type};
 use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
 pub struct ibv_context_ops {
@@ -63,13 +63,6 @@ pub struct ibv_mr {
 }
 pub struct ibv_pd {}
 
-#[derive(Default)]
-pub struct ibv_port_attr {
-    pub state: ibv_port_state,
-    pub active_mtu: u32,
-    pub lid: u16,
-}
-
 pub struct ibv_sge {
     pub addr: u64,
     pub length: u32,
@@ -85,7 +78,7 @@ pub struct ibv_qp<'ctx> {
 #[derive(Default)]
 pub struct ibv_qp_attr {
     pub qp_state: ibv_qp_state,
-    pub path_mtu: u32,
+    pub path_mtu: ibv_mtu,
     pub rq_psn: u32,
     pub sq_psn: u32,
     pub dest_qp_num: u32,
@@ -212,8 +205,9 @@ pub fn ibv_get_device_list() -> Result<Vec<ibv_device>> {
 }
 
 /// Return kernel device name
-pub fn ibv_get_device_name(device: &ibv_device) -> Option<*const i8> {
-    todo!()
+pub fn ibv_get_device_name(device: &ibv_device) -> Option<String> {
+    // TODO: don't hardcode this
+    Some("mlx3_0".to_string())
 }
 
 /// Return kernel device index
@@ -236,11 +230,22 @@ pub fn ibv_open_device(device: &ibv_device) -> Result<ibv_context> {
     Ok(ibv_context { nic: device.nic, ops: IBV_CONTEXT_OPS, })
 }
 
+/// Get device properties
+pub fn ibv_query_device(context: &ibv_context) -> Result<ibv_device_attr> {
+    context
+        .lock()
+        .query_device()
+        .map_err(|s| Error::new(ErrorKind::Other, s))
+}
+
 /// Get port properties
 pub fn ibv_query_port(
     context: &ibv_context, port_num: u8,
 ) -> Result<ibv_port_attr> {
-    todo!()
+    context
+        .lock()
+        .query_port(port_num)
+        .map_err(|s| Error::new(ErrorKind::Other, s))
 }
 
 /// Get a GID table entry

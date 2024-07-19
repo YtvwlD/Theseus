@@ -8,4 +8,4 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 
 [dependencies]
 app_io = { path = "../../kernel/app_io" }
-mlx3 = { path = "../../kernel/mlx3" }
+ibverbs-sys = { path = "../../kernel/ibverbs-sys" }

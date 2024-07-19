@@ -1,7 +1,7 @@
 use core::{fmt::Debug, mem::size_of};
 use memory::MappedPages;
 use modular_bitfield_msb::{bitfield, specifiers::{B2, B4, B48, B9}};
-use mlx_infiniband::ibv_mtu;
+use mlx_infiniband::{ibv_mtu, ibv_port_attr, ibv_port_state};
 
 use crate::cmd::{CommandInterface, MadIfcOpcodeModifier, Opcode, SetPortOpcodeModifier};
 
@@ -77,9 +77,11 @@ impl Port {
     }
     
     /// Query the port capabilities, configuration and current settings.
-    fn query(
+    /// 
+    /// This is called by ibv_query_port.
+    pub(super) fn query(
         &mut self, cmd: &mut CommandInterface,
-    ) -> Result<(), &'static str> {
+    ) -> Result<ibv_port_attr, &'static str> {
         let page: MappedPages = cmd.execute_command(
             Opcode::QueryPort, (), (), self.number.into(),
         )?;
@@ -89,21 +91,16 @@ impl Port {
                 .try_into()
                 .unwrap()
         ));
-        Ok(())
-    }
-    
-    /// Get statistics about this port.
-    /// 
-    /// This is a bit similar to libibumad's `get_port`.
-    pub(crate) fn get_stats(
-        &mut self, cmd: &mut CommandInterface,
-    ) -> Result<PortStats, &'static str> {
-        self.query(cmd)?;
-        Ok(PortStats {
-            number: self.number,
-            link_up: self.capabilities.as_ref().unwrap().link_up(),
-            capability_mask: self.capability_mask,
-            layer: PortStatsLayer::Infiniband,
+
+        Ok(ibv_port_attr {
+            state: match self.capabilities.as_ref().unwrap().link_up() {
+                true => ibv_port_state::IBV_PORT_ACTIVE,
+                false => ibv_port_state::IBV_PORT_DOWN,
+            },
+            active_mtu: ibv_mtu::Mtu4096, // TODO
+            port_cap_flags: self.capability_mask,
+            lid: 0, // TODO
+            link_layer: 0, // TODO
         })
     }
 }
@@ -178,16 +175,3 @@ impl Debug for PortCapabilities {
             .finish()
     }
 }
-
-/// Statistics about the port
-/// 
-/// This is a bit similar to libibumad's `umad_port_t`.
-pub struct PortStats {
-    pub number: u8,
-    pub link_up: bool,
-    pub capability_mask: u32,
-    pub layer: PortStatsLayer,
-}
-
-#[derive(Debug)]
-pub enum PortStatsLayer { Infiniband, Ethernet }

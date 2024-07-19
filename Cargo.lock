@@ -1573,6 +1573,7 @@ dependencies = [
  "bitflags 2.4.1",
  "core2",
  "mlx3",
+ "mlx_infiniband",
  "sync_irq",
 ]
 
@@ -2154,6 +2155,7 @@ dependencies = [
  "byteorder",
  "log",
  "memory",
+ "mlx_infiniband",
  "modular-bitfield-msb",
  "pci",
  "sleep",
@@ -2199,6 +2201,14 @@ dependencies = [
  "num_enum",
  "volatile 0.2.7",
  "zerocopy",
+]
+
+[[package]]
+name = "mlx_infiniband"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.4.1",
+ "strum_macros",
 ]
 
 [[package]]

@@ -24,7 +24,6 @@ use fw::{Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
 use pci::PciDevice;
-pub use port::Mtu;
 use port::{Port, PortStats};
 use spin::Once; 
 use sync_irq::IrqSafeMutex;

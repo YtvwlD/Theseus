@@ -1,7 +1,7 @@
 use core::{fmt::Debug, mem::size_of};
 use memory::MappedPages;
 use modular_bitfield_msb::{bitfield, specifiers::{B2, B4, B48, B9}};
-use strum_macros::FromRepr;
+use mlx_infiniband::ibv_mtu;
 
 use crate::cmd::{CommandInterface, MadIfcOpcodeModifier, Opcode, SetPortOpcodeModifier};
 
@@ -15,7 +15,7 @@ pub struct Port {
 
 impl Port {
     pub(super) fn new(
-        cmd: &mut CommandInterface, number: u8, mtu: Mtu,
+        cmd: &mut CommandInterface, number: u8, mtu: ibv_mtu,
         pkey_table_size: Option<u16>,
     ) -> Result<Self, &'static str> {
         trace!("initializing port {number}...");
@@ -116,17 +116,6 @@ impl Drop for Port {
     }
 }
 
-#[repr(u8)]
-#[derive(Default, Debug, FromRepr)]
-pub enum Mtu {
-    Mtu256 = 1,
-    Mtu512 = 2,
-    Mtu1024 = 3,
-    Mtu2048 = 4,
-    #[default]
-    Mtu4096 = 5,
-}
-
 #[bitfield]
 struct SetPortCommand {
     #[skip] __: B9,
@@ -183,7 +172,7 @@ impl Debug for PortCapabilities {
             .field("IB supported", &self.ib())
             .field("Ethernet supported", &self.eth())
             .field("Link", &self.link_up())
-            .field("IB MTU", &Mtu::from_repr(self.ib_mtu()))
+            .field("IB MTU", &ibv_mtu::from_repr(self.ib_mtu()))
             .field("Eth MTU", &self.eth_mtu())
             .field("Port MAC", &self.mac())
             .finish()

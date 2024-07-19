@@ -5,11 +5,12 @@ use core::mem::size_of;
 use alloc::vec::Vec;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
+use mlx_infiniband::ibv_mtu;
 use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, B2, B20, B22, B24, B25, B27, B3, B31, B36, B4, B42, B45, B5, B6, B63, B7, B72, B88, B91}};
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}, port::{Mtu, Port}};
+use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}, port::Port};
 
 pub(super) const PAGE_SHIFT: u8 = 12;
 
@@ -918,7 +919,7 @@ impl Hca {
     ) -> Result<Vec<Port>, &'static str> {
         let mut ports = Vec::with_capacity(caps.num_ports().into());
         for number in 1..=caps.num_ports() {
-            let port = Port::new(cmd, number, Mtu::Mtu4096, None)?;
+            let port = Port::new(cmd, number, ibv_mtu::Mtu4096, None)?;
             ports.push(port);
         }
         Ok(ports)

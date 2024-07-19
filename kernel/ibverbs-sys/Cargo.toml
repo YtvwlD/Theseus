@@ -8,5 +8,6 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 
 [dependencies]
 bitflags = "2.4.1"
-mlx3 = { path = "../../kernel/mlx3" }
 core2 = { path = "../../libs/core2", default-features = false }
+mlx3 = { path = "../../kernel/mlx3" }
+sync_irq = { path = "../../libs/sync_irq" }

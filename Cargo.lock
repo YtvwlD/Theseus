@@ -1573,6 +1573,7 @@ dependencies = [
  "bitflags 2.4.1",
  "core2",
  "mlx3",
+ "sync_irq",
 ]
 
 [[package]]

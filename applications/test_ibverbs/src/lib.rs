@@ -4,8 +4,11 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 
-
 pub fn main(_args: Vec<String>) -> isize {
-    println!("Hello World!");
+    let device = ibverbs::devices()
+        .expect("failed to list devices")
+        .iter()
+        .next()
+        .expect("failed to get device");
     0
 }

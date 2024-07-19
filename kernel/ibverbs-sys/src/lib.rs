@@ -10,7 +10,9 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use core2::io::{Error, ErrorKind, Result as Result};
 
+use mlx3::{get_mlx3_nic, ConnectX3Nic};
 pub use mlx3::Mtu as ibv_mtu;
+use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
 pub mod ibv_qp_type {
     #[derive(Clone, Copy, PartialEq)]
@@ -53,6 +55,12 @@ pub struct ibv_context_ops {
     ) -> Result<Vec<ibv_recv_wr>>>,
 }
 
+const IBV_CONTEXT_OPS: ibv_context_ops = ibv_context_ops {
+    poll_cq: Some(ibv_poll_cq),
+    post_send: Some(ibv_post_send),
+    post_recv: Some(ibv_post_recv),
+};
+
 bitflags! {
     #[derive(Default, PartialEq, Eq)]
     pub struct ibv_port_state: i32 {
@@ -65,10 +73,22 @@ bitflags! {
     }
 }
 
-pub struct ibv_device {}
+pub struct ibv_device {
+    nic: &'static IrqSafeMutex<ConnectX3Nic>,
+}
+
 pub struct ibv_context {
     pub ops: ibv_context_ops,
+    nic: &'static IrqSafeMutex<ConnectX3Nic>,
 }
+
+impl ibv_context {
+    /// Get access to the underlying device.
+    fn lock(&self) -> IrqSafeMutexGuard<ConnectX3Nic> {
+        self.nic.lock()
+    }
+}
+
 pub struct ibv_cq {
 }
 
@@ -253,7 +273,11 @@ pub enum ibv_send_flags {
 /// 
 /// Return a array of IB devices.
 pub fn ibv_get_device_list() -> Result<Vec<ibv_device>> {
-    todo!()
+    let mut devices = Vec::new();
+    if let Some(mlx3) = get_mlx3_nic() {
+        devices.push(ibv_device { nic: &mlx3, });
+    }
+    Ok(devices)
 }
 
 /// Return kernel device name
@@ -278,7 +302,7 @@ pub fn ibv_get_device_guid(device: &ibv_device) -> Result<__be64> {
 
 /// Initialize device for use
 pub fn ibv_open_device(device: &ibv_device) -> Result<ibv_context> {
-    todo!()
+    Ok(ibv_context { nic: device.nic, ops: IBV_CONTEXT_OPS, })
 }
 
 /// Get port properties
@@ -334,6 +358,27 @@ pub fn ibv_create_qp<'ctx>(
 pub fn ibv_modify_qp(
     qp: &mut ibv_qp, attr: &ibv_qp_attr, attr_mask: ibv_qp_attr_mask,
 ) -> Result<()> {
+    todo!()
+}
+
+/// poll a completion queue (CQ)
+fn ibv_poll_cq(
+    cq: &ibv_cq, wc: &mut [ibv_wc],
+) -> Result<i32> {
+    todo!()
+}
+
+/// post a list of work requests (WRs) to a send queue
+unsafe fn ibv_post_send(
+    qp: &mut ibv_qp, wr: &mut ibv_send_wr,
+) -> Result<Vec<ibv_send_wr>> {
+    todo!()
+}
+
+/// post a list of work requests (WRs) to a receive queue
+unsafe fn ibv_post_recv(
+    qp: &mut ibv_qp, wr: &mut ibv_recv_wr,
+) -> Result<Vec<ibv_recv_wr>> {
     todo!()
 }
 

@@ -53,6 +53,11 @@ pub(super) enum Opcode {
     GenEqe = 0x58,
 
     // CQ commands
+    Sw2HwCq = 0x16,
+    Hw2SwCq = 0x17,
+    QueryCq = 0x18,
+    ModifyCq = 0x2c,
+
     // QP/EE commands
 
     // special QP and management commands

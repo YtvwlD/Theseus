@@ -49,7 +49,20 @@ impl ibv_context {
     }
 }
 
-pub struct ibv_cq {
+pub struct ibv_cq<'ctx> {
+    context: &'ctx ibv_context,
+    number: usize,
+    /// Consumer-supplied context returned for completion events
+    cq_context: isize,
+}
+
+impl Drop for ibv_cq<'_> {
+    fn drop(&mut self) {
+        self.context
+            .lock()
+            .destroy_cq(self.number)
+            .expect("failed to destroy completion queue")
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -70,9 +83,11 @@ pub struct ibv_sge {
 }
 pub struct ibv_srq {}
 
-pub struct ibv_qp<'ctx> {
+pub struct ibv_qp<'ctx, 'cq> {
     pub ops: &'ctx ibv_context_ops,
     pub qp_num: u32,
+    send_cq: &'cq ibv_cq<'ctx>,
+    recv_cq: &'cq ibv_cq<'ctx>,
 }
 
 #[derive(Default)]
@@ -102,10 +117,10 @@ pub struct ibv_qp_cap {
     pub max_inline_data: u32,
 }
 
-pub struct ibv_qp_init_attr<'cq> {
+pub struct ibv_qp_init_attr<'cq, 'ctx> {
     pub qp_context: isize,
-    pub send_cq: &'cq ibv_cq,
-    pub recv_cq: &'cq ibv_cq,
+    pub send_cq: &'cq ibv_cq<'ctx>,
+    pub recv_cq: &'cq ibv_cq<'ctx>,
     pub srq: Option<()>,
     pub cap: ibv_qp_cap,
     pub qp_type: ibv_qp_type::Type,
@@ -285,13 +300,19 @@ pub fn ibv_create_cq(
     context: &ibv_context, cqe: i32, cq_context: isize,
     channel: Option<()>, comp_vector: i32,
 ) -> Result<ibv_cq> {
-    todo!()
+    assert!(channel.is_none());
+    assert_eq!(comp_vector, 0);
+    let number = context
+        .lock()
+        .create_cq(cqe)
+        .map_err(|s| Error::new(ErrorKind::Other, s))?;
+    Ok(ibv_cq { context, number, cq_context, })
 }
 
 /// Create a queue pair.
-pub fn ibv_create_qp<'ctx>(
-    pd: &'ctx ibv_pd, qp_init_attr: &ibv_qp_init_attr<'ctx>,
-) -> Result<ibv_qp<'ctx>> {
+pub fn ibv_create_qp<'ctx, 'cq>(
+    pd: &'ctx ibv_pd, qp_init_attr: &ibv_qp_init_attr<'cq, 'ctx>,
+) -> Result<ibv_qp<'ctx, 'cq>> {
     todo!()
 }
 

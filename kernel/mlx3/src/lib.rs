@@ -7,6 +7,7 @@
 extern crate alloc;
 
 mod cmd;
+mod completion_queue;
 mod device;
 mod event_queue;
 mod fw;
@@ -19,8 +20,9 @@ mod profile;
 
 use alloc::vec::Vec;
 use cmd::CommandInterface;
-use event_queue::{init_eqs, EventQueue, Offsets};
-use fw::{Hca, MappedFirmwareArea};
+use completion_queue::CompletionQueue;
+use event_queue::{init_eqs, EventQueue};
+use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
 use mlx_infiniband::{ibv_device_attr, ibv_port_attr};
@@ -53,11 +55,15 @@ pub struct ConnectX3Nic {
     config_regs: MappedPages,
     firmware: Firmware,
     firmware_area: Option<MappedFirmwareArea>,
+    capabilities: Option<Capabilities>,
+    offsets: Option<Offsets>,
     icm_tables: Option<MappedIcmTables>,
     hca: Option<Hca>,
     doorbells: Vec<MappedPages>,
     blueflame: Vec<MappedPages>,
     eqs: Vec<EventQueue>,
+    // TODO: find some way to bind this to the relevant EQ
+    cqs: Vec<CompletionQueue>,
     ports: Vec<Port>,
 }
 
@@ -96,23 +102,28 @@ impl ConnectX3Nic {
             config_regs,
             firmware,
             firmware_area: Some(firmware_area),
+            capabilities: None,
+            offsets: None,
             icm_tables: None,
             hca: None,
             doorbells: Vec::new(),
             blueflame: Vec::new(),
             eqs: Vec::new(),
+            cqs: Vec::new(),
             ports: Vec::new(),
         };
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
         let firmware_area = nic.firmware_area.as_mut().unwrap();
         firmware_area.run(&mut command_interface)?;
-        let caps = firmware_area.query_capabilities(&mut command_interface)?;
+        nic.capabilities = Some(firmware_area.query_capabilities(&mut command_interface)?);
+        let caps = nic.capabilities.as_ref().unwrap();
         // In the Nautilus driver, some of the port setup already happens here.
-        let mut offsets = Offsets::init(&caps);
-        let mut profile = Profile::new(&caps)?;
+        nic.offsets = Some(Offsets::init(caps));
+        let offsets = nic.offsets.as_mut().unwrap();
+        let mut profile = Profile::new(caps)?;
         let aux_pages = firmware_area.set_icm(&mut command_interface, profile.total_size)?;
         let icm_aux_area = firmware_area.map_icm_aux(&mut command_interface, aux_pages)?;
-        nic.icm_tables = Some(icm_aux_area.map_icm_tables(&mut command_interface, &profile, &caps)?);
+        nic.icm_tables = Some(icm_aux_area.map_icm_tables(&mut command_interface, &profile, caps)?);
         nic.hca = Some(profile.init_hca.init_hca(&mut command_interface)?);
         let hca = nic.hca.as_ref().unwrap();
         // give us the interrupt pin
@@ -123,7 +134,7 @@ impl ConnectX3Nic {
             user_access_region
         )?;
         nic.eqs = init_eqs(
-            &mut command_interface, &mut nic.doorbells, &caps, &mut offsets,
+            &mut command_interface, &mut nic.doorbells, caps, offsets,
             memory_regions,
         )?;
         // In the Nautilus driver, CQs and QPs are already allocated here.
@@ -156,12 +167,47 @@ impl ConnectX3Nic {
             Err("port does not exist")
         }
     }
+
+    /// Create a completion queue and return its number.
+    /// 
+    /// This is used by ibv_create_cq.
+    pub fn create_cq(&mut self, min_num_entries: i32) -> Result<usize, &'static str> {
+        let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        let mut cq = CompletionQueue::new(
+            &mut cmd, self.capabilities.as_ref().unwrap(),
+            self.offsets.as_mut().unwrap(), memory_regions,
+            self.eqs.get(0), min_num_entries.try_into().unwrap(),
+        )?;
+        cq.arm(&mut self.doorbells)?;
+        let number = cq.number();
+        self.cqs.push(cq);
+        Ok(number)
+    }
+
+    /// Destroy a completion queue.
+    pub fn destroy_cq(&mut self, number: usize) -> Result<(), &'static str> {
+        let (index, _) = self.cqs
+            .iter()
+            .enumerate()
+            .find(|(_, cq)| cq.number() == number)
+            .ok_or("completion queue not found")?;
+        let cq = self.cqs.remove(index);
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        cq.destroy(&mut cmd)?;
+        Ok(())
+    }
 }
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
         let mut cmd = CommandInterface::new(&mut self.config_regs)
             .expect("failed to get command interface");
+        while let Some(cq) = self.cqs.pop() {
+            cq
+                .destroy(&mut cmd)
+                .unwrap()
+        }
         while let Some(port) = self.ports.pop() {
             port
                 .close(&mut cmd)
@@ -187,5 +233,54 @@ impl Drop for ConnectX3Nic {
                 .unmap(&mut cmd)
                 .unwrap()
         }
+    }
+}
+
+struct Offsets {
+    next_cqn: usize,
+    next_qpn: usize,
+    next_dmpt: usize,
+    next_eqn: usize,
+    next_sqc_doorbell_index: usize,
+    next_eq_doorbell_index: usize,
+}
+
+impl Offsets {
+    /// Initialize the queue offsets.
+    fn init(caps: &Capabilities) -> Self {
+        Self {
+            // This should return the first non reserved cq, qp, eq number.
+            next_cqn: 1 << caps.log2_rsvd_cqs(),
+            next_qpn: 1 << caps.log2_rsvd_qps(),
+            next_dmpt: 1 << caps.log2_rsvd_mrws(),
+            next_eqn: caps.num_rsvd_eqs().into(),
+            // For SQ and CQ Uar Doorbell index starts from 128
+            next_sqc_doorbell_index: 128,
+            // Each UAR has 4 EQ doorbells; so if a UAR is reserved,
+            // then we can't use any EQs whose doorbell falls on that page,
+            // even if the EQ itself isn't reserved.
+            next_eq_doorbell_index: caps.num_rsvd_eqs() as usize / 4,
+        }
+    }
+    
+    /// Allocate an event queue number.
+    fn alloc_eqn(&mut self) -> usize {
+        let res = self.next_eqn;
+        self.next_eqn += 1;
+        res
+    }
+
+    /// Allocate a completion queue number.
+    fn alloc_cqn(&mut self) -> usize {
+        let res = self.next_cqn;
+        self.next_cqn += 1;
+        res
+    }
+
+    /// Allocate a doorbell for SCQs.
+    fn alloc_scq_db(&mut self) -> usize {
+        let res = self.next_sqc_doorbell_index;
+        self.next_sqc_doorbell_index += 1;
+        res
     }
 }

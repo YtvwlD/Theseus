@@ -10,9 +10,12 @@ use modular_bitfield_msb::{bitfield, specifiers::{B1, B10, B104, B11, B12, B15, 
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode}, icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT}, port::Port};
-
-pub(super) const PAGE_SHIFT: u8 = 12;
+use super::{
+    cmd::{CommandInterface, MadDemuxOpcodeModifier, Opcode},
+    device::{DEFAULT_UAR_PAGE_SHIFT, PAGE_SHIFT},
+    icm::{MappedIcmAuxiliaryArea, ICM_PAGE_SHIFT},
+    port::Port,
+};
 
 #[derive(Clone, FromBytes)]
 #[repr(C, packed)]
@@ -584,8 +587,8 @@ pub(super) struct DoorbellPage {
 
     // CQ
     /// contains the sequence number, the command and the cq number
-    cq_sn_cmd_num: WriteOnly<U32<BigEndian>>,
-    cq_consumer_index: WriteOnly<U32<BigEndian>>,
+    pub(super) cq_sn_cmd_num: WriteOnly<U32<BigEndian>>,
+    pub(super) cq_consumer_index: WriteOnly<U32<BigEndian>>,
 
     // skip 502 u32
     _padding4: [u32; 502],
@@ -728,7 +731,6 @@ impl InitHcaParameters {
     pub(super) fn init_hca(
         &mut self, cmd: &mut CommandInterface,
     ) -> Result<Hca, &'static str> {
-        const DEFAULT_UAR_PAGE_SHIFT: u8 = 12;
 
         // set the needed values
         self.set_version(2); // version must be 2

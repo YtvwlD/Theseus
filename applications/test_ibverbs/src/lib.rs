@@ -14,5 +14,7 @@ pub fn main(_args: Vec<String>) -> isize {
         .expect("failed to open device");
     let pd = context.alloc_pd()
         .expect("failed to allocate protection domain");
+    let cq = context.create_cq(4096, 0)
+        .expect("failed to create completion queue");
     0
 }

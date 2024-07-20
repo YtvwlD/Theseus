@@ -8,6 +8,8 @@ use zerocopy::{U32, FromBytes};
 
 const RESET_BASE: usize = 0xf0000;
 const OWNER_BASE: usize = 0x8069c;
+pub(super) const DEFAULT_UAR_PAGE_SHIFT: u8 = 12;
+pub(super) const PAGE_SHIFT: u8 = 12;
 
 #[derive(FromBytes)]
 #[repr(C, packed)]
@@ -73,4 +75,8 @@ impl Ownership {
             Err("We don't have card ownership")
         }
     }
+}
+
+pub(super) fn uar_index_to_hw(index: usize) -> usize {
+    index << (PAGE_SHIFT - DEFAULT_UAR_PAGE_SHIFT)
 }

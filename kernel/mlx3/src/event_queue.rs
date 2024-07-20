@@ -6,9 +6,13 @@ use bitflags::bitflags;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
 
-use crate::{cmd::{CommandInterface, Opcode}, fw::DoorbellPage, icm::ICM_PAGE_SHIFT};
-
-use super::{fw::{Capabilities, PAGE_SHIFT}, icm::MrTable};
+use super::{
+    cmd::{CommandInterface, Opcode},
+    device::PAGE_SHIFT,
+    fw::{Capabilities, DoorbellPage},
+    icm::{MrTable, ICM_PAGE_SHIFT},
+    Offsets,
+};
 
 /// Initialize the event queues.
 /// This creates all of the EQs ahead of time,
@@ -159,7 +163,11 @@ impl EventQueue {
         );
         Ok(())
     }
-
+    
+    /// Get the number of this event queue.
+    pub(super) fn number(&self) -> usize {
+        self.number
+    }
 }
 
 impl Drop for EventQueue {
@@ -266,40 +274,5 @@ bitflags! {
         // HCA interface
         const COMMAND_INTERFACE_COMPLETION = 1 << EventType::CommandInterfaceCompletion as u64;
         const COMMUNICATION_CHANNEL_WRITTEN = 1 << EventType::CommunicationChannelWritten as u64;
-    }
-}
-
-pub(super) struct Offsets {
-    next_cqn: usize,
-    next_qpn: usize,
-    next_dmpt: usize,
-    next_eqn: usize,
-    next_sqc_doorbell_index: usize,
-    next_eq_doorbell_index: usize,
-}
-
-impl Offsets {
-    /// Initialize the queue offsets.
-    pub(super) fn init(caps: &Capabilities) -> Self {
-        Self {
-            // This should return the first non reserved cq, qp, eq number.
-            next_cqn: 1 << caps.log2_rsvd_cqs(),
-            next_qpn: 1 << caps.log2_rsvd_qps(),
-            next_dmpt: 1 << caps.log2_rsvd_mrws(),
-            next_eqn: caps.num_rsvd_eqs().into(),
-            // For SQ and CQ Uar Doorbell index starts from 128
-            next_sqc_doorbell_index: 128,
-            // Each UAR has 4 EQ doorbells; so if a UAR is reserved,
-            // then we can't use any EQs whose doorbell falls on that page,
-            // even if the EQ itself isn't reserved.
-            next_eq_doorbell_index: caps.num_rsvd_eqs() as usize / 4,
-        }
-    }
-    
-    /// Allocate an event queue number.
-    fn alloc_eqn(&mut self) -> usize {
-        let res = self.next_eqn;
-        self.next_eqn += 1;
-        res
     }
 }

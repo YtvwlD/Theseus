@@ -256,8 +256,12 @@ pub fn ibv_query_gid(
 }
 
 /// Allocate a protection domain
-pub fn ibv_alloc_pd(context: &ibv_context) -> Result<ibv_pd> {
-    todo!()
+/// 
+/// This is currently just a stub.
+pub fn ibv_alloc_pd(_context: &ibv_context) -> Result<ibv_pd> {
+    // TODO: figure out how to actually do this as the Nautilus driver has no
+    // concept of protection domains
+    Ok(ibv_pd {})
 }
 
 /// Register a memory region

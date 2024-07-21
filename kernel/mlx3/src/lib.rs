@@ -15,6 +15,7 @@ mod icm;
 mod mcg;
 mod port;
 mod profile;
+mod queue_pair;
 
 #[macro_use] extern crate log;
 
@@ -25,9 +26,10 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_device_attr, ibv_port_attr};
+use mlx_infiniband::{ibv_device_attr, ibv_port_attr, ibv_qp_cap, ibv_qp_type};
 use pci::PciDevice;
 use port::Port;
+use queue_pair::QueuePair;
 use spin::Once; 
 use sync_irq::IrqSafeMutex;
 
@@ -64,6 +66,7 @@ pub struct ConnectX3Nic {
     eqs: Vec<EventQueue>,
     // TODO: find some way to bind this to the relevant EQ
     cqs: Vec<CompletionQueue>,
+    qps: Vec<QueuePair>,
     ports: Vec<Port>,
 }
 
@@ -110,6 +113,7 @@ impl ConnectX3Nic {
             blueflame: Vec::new(),
             eqs: Vec::new(),
             cqs: Vec::new(),
+            qps: Vec::new(),
             ports: Vec::new(),
         };
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
@@ -197,12 +201,57 @@ impl ConnectX3Nic {
         cq.destroy(&mut cmd)?;
         Ok(())
     }
+
+    /// Create a queue pair and return its number.
+    ///
+    /// This is used by ibv_create_qp.
+    pub fn create_qp(
+        &mut self, qp_type: ibv_qp_type::Type, send_cq_number: usize,
+        receive_cq_number: usize, ib_caps: &mut ibv_qp_cap,
+    ) -> Result<usize, &'static str> {
+        let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        let send_cq = self.cqs
+            .iter()
+            .find(|cq| cq.number() == send_cq_number)
+            .ok_or("invalid send completion queue number")?;
+        let receive_cq = self.cqs
+            .iter()
+            .find(|cq| cq.number() == receive_cq_number)
+            .ok_or("invalid receive completion queue number")?;
+        let qp = QueuePair::new(
+            &mut cmd, self.capabilities.as_ref().unwrap(),
+            self.offsets.as_mut().unwrap(), memory_regions, qp_type,
+            send_cq, receive_cq, ib_caps,
+        )?;
+        let number = qp.number();
+        self.qps.push(qp);
+        Ok(number)
+    }
+
+    /// Destroy a queue pair.
+    pub fn destroy_qp(&mut self, number: usize) -> Result<(), &'static str> {
+        let (index, _) = self.qps
+            .iter()
+            .enumerate()
+            .find(|(_, qp)| qp.number() == number)
+            .ok_or("queue pair not found")?;
+        let qp = self.qps.remove(index);
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        qp.destroy(&mut cmd)?;
+        Ok(())
+    }
 }
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
         let mut cmd = CommandInterface::new(&mut self.config_regs)
             .expect("failed to get command interface");
+        while let Some(qp) = self.qps.pop() {
+            qp
+                .destroy(&mut cmd)
+                .unwrap()
+        }
         while let Some(cq) = self.cqs.pop() {
             cq
                 .destroy(&mut cmd)
@@ -274,6 +323,13 @@ impl Offsets {
     fn alloc_cqn(&mut self) -> usize {
         let res = self.next_cqn;
         self.next_cqn += 1;
+        res
+    }
+
+    /// Allocate a queue pair number.
+    fn alloc_qpn(&mut self) -> usize {
+        let res = self.next_qpn;
+        self.next_qpn += 1;
         res
     }
 

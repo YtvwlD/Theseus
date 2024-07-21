@@ -1,3 +1,5 @@
+//! This module contains some structs for InfiniBand.
+
 #![no_std]
 #![allow(non_camel_case_types)]
 
@@ -8,13 +10,21 @@ use bitflags::bitflags;
 use strum_macros::FromRepr;
 
 pub mod ibv_qp_type {
-    #[derive(Clone, Copy, PartialEq)]
+    #[derive(Clone, Copy, PartialEq, Debug)]
     pub enum Type {
         IBV_QPT_RC, IBV_QPT_UC, IBV_QPT_UD,
     }
     pub use Type::IBV_QPT_RC;
     pub use Type::IBV_QPT_UC;
     pub use Type::IBV_QPT_UD;
+}
+
+pub struct ibv_qp_cap {
+    pub max_send_wr: u32,
+    pub max_recv_wr: u32,
+    pub max_send_sge: u32,
+    pub max_recv_sge: u32,
+    pub max_inline_data: u32,
 }
 
 pub type __be64 = u64;
@@ -109,7 +119,7 @@ pub struct ibv_port_attr {
     pub phys_state: PhysicalPortState,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum ibv_qp_state {
     #[default]
     IBV_QPS_RESET,

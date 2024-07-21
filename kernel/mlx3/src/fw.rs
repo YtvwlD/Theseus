@@ -224,7 +224,7 @@ impl Drop for MappedFirmwareArea {
 pub(super) struct Capabilities {
     #[skip] __: u128,
     log_max_srq_sz: u8,
-    log_max_qp_sz: u8,
+    pub(super) log_max_qp_sz: u8,
     #[skip] __: B4,
     pub(super) log2_rsvd_qps: B4,
     #[skip] __: B3,
@@ -365,10 +365,10 @@ pub(super) struct Capabilities {
     #[skip] __: B2,
     log_max_bf_pages: B6,
     #[skip] __: u8,
-    max_sg_sq: u8,
-    max_desc_sz_sq: u16,
+    pub(super) max_sg_sq: u8,
+    pub(super) max_desc_sz_sq: u16,
     #[skip] __: u8,
-    max_sg_rq: u8,
+    pub(super) max_sg_rq: u8,
     max_desc_sz_rq: u16,
     // user_mac_en?
     // svlan_by_qp?

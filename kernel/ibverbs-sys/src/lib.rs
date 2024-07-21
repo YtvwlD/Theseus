@@ -10,7 +10,7 @@ use alloc::{string::{String, ToString}, vec::Vec};
 use bitflags::bitflags;
 use core2::io::{Error, ErrorKind, Result as Result};
 use mlx3::{get_mlx3_nic, ConnectX3Nic};
-pub use mlx_infiniband::{__be64, ibv_access_flags, ibv_device_attr, ibv_mtu, ibv_port_attr, ibv_port_state, ibv_qp_attr_mask, ibv_qp_state, ibv_qp_type};
+pub use mlx_infiniband::{__be64, ibv_access_flags, ibv_device_attr, ibv_mtu, ibv_port_attr, ibv_port_state, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
 use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
 pub struct ibv_context_ops {
@@ -74,7 +74,9 @@ pub struct ibv_mr {
     pub lkey: u32,
     pub rkey: u32,
 }
-pub struct ibv_pd {}
+pub struct ibv_pd<'ctx> {
+    context: &'ctx ibv_context,
+}
 
 pub struct ibv_sge {
     pub addr: u64,
@@ -88,6 +90,15 @@ pub struct ibv_qp<'ctx, 'cq> {
     pub qp_num: u32,
     send_cq: &'cq ibv_cq<'ctx>,
     recv_cq: &'cq ibv_cq<'ctx>,
+}
+
+impl Drop for ibv_qp<'_, '_> {
+    fn drop(&mut self) {
+        self.send_cq.context
+            .lock()
+            .destroy_qp(self.qp_num.try_into().unwrap())
+            .expect("failed to destroy queue pair")
+    }
 }
 
 #[derive(Default)]
@@ -107,14 +118,6 @@ pub struct ibv_qp_attr {
     pub timeout: u8,
     pub retry_cnt: u8,
     pub rnr_retry: u8,
-}
-
-pub struct ibv_qp_cap {
-    pub max_send_wr: u32,
-    pub max_recv_wr: u32,
-    pub max_send_sge: u32,
-    pub max_recv_sge: u32,
-    pub max_inline_data: u32,
 }
 
 pub struct ibv_qp_init_attr<'cq, 'ctx> {
@@ -274,10 +277,10 @@ pub fn ibv_query_gid(
 /// Allocate a protection domain
 /// 
 /// This is currently just a stub.
-pub fn ibv_alloc_pd(_context: &ibv_context) -> Result<ibv_pd> {
+pub fn ibv_alloc_pd(context: &ibv_context) -> Result<ibv_pd> {
     // TODO: figure out how to actually do this as the Nautilus driver has no
     // concept of protection domains
-    Ok(ibv_pd {})
+    Ok(ibv_pd { context })
 }
 
 /// Register a memory region
@@ -311,9 +314,20 @@ pub fn ibv_create_cq(
 
 /// Create a queue pair.
 pub fn ibv_create_qp<'ctx, 'cq>(
-    pd: &'ctx ibv_pd, qp_init_attr: &ibv_qp_init_attr<'cq, 'ctx>,
+    pd: &'ctx ibv_pd, qp_init_attr: &mut ibv_qp_init_attr<'cq, 'ctx>,
 ) -> Result<ibv_qp<'ctx, 'cq>> {
-    todo!()
+    let send_cq = qp_init_attr.send_cq;
+    let recv_cq = qp_init_attr.recv_cq;
+    assert!(core::ptr::eq(send_cq.context, recv_cq.context));
+    let qp_num = pd.context
+        .lock()
+        .create_qp(
+            qp_init_attr.qp_type, send_cq.number, recv_cq.number,
+            &mut qp_init_attr.cap,
+        )
+        .map_err(|s| Error::new(ErrorKind::Other, s))?
+        .try_into().unwrap();
+    Ok(ibv_qp { ops: &IBV_CONTEXT_OPS, qp_num, send_cq, recv_cq, })
 }
 
 /// Modify a queue pair.

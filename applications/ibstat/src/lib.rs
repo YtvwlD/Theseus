@@ -24,6 +24,10 @@ pub fn main(_args: Vec<String>) -> isize {
             let port_stats = ibv_query_port(&context, port_num)
                 .expect("failed to query port");
             println!("        State: {:?}", port_stats.state);
+            println!("        Physical state: {:?}", port_stats.phys_state);
+            println!("        Base lid: {}", port_stats.lid);
+            println!("        LMC: {}", port_stats.lmc);
+            println!("        SM lid: {}", port_stats.sm_lid);
             println!("        Capability mask: 0x{:x}", port_stats.port_cap_flags);
             println!("        Link layer: {}", port_stats.link_layer);
         }

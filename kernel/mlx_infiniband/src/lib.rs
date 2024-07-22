@@ -50,16 +50,30 @@ pub enum ibv_mtu {
     Mtu4096 = 5,
 }
 
-bitflags! {
-    #[derive(Debug, Default, PartialEq, Eq)]
-    pub struct ibv_port_state: i32 {
-        const IBV_PORT_NOP = 0;
-        const IBV_PORT_DOWN = 1;
-        const IBV_PORT_INIT = 2;
-        const IBV_PORT_ARMED = 3;
-        const IBV_PORT_ACTIVE = 4;
-        const IBV_PORT_ACTIVE_DEFER = 5;
-    }
+#[derive(Debug, Default, PartialEq, Eq, FromRepr)]
+#[repr(i32)]
+pub enum ibv_port_state {
+    #[default]
+    IBV_PORT_NOP = 0,
+    IBV_PORT_DOWN = 1,
+    IBV_PORT_INIT = 2,
+    IBV_PORT_ARMED = 3,
+    IBV_PORT_ACTIVE = 4,
+    IBV_PORT_ACTIVE_DEFER = 5,
+}
+
+#[derive(Debug, Default, FromRepr)]
+#[repr(u8)]
+pub enum PhysicalPortState {
+    #[default]
+    Nop = 0,
+    Sleep = 1,
+    Polling = 2,
+    Disabled = 3,
+    PortConfigurationTraining = 4,
+    LinkUp = 5,
+    LinkErrorRecovery = 6,
+    PhyTest = 7,
 }
 
 bitflags! {
@@ -85,10 +99,14 @@ bitflags! {
 #[derive(Default)]
 pub struct ibv_port_attr {
     pub state: ibv_port_state,
+    pub max_mtu: ibv_mtu,
     pub active_mtu: ibv_mtu,
     pub port_cap_flags: u32,
     pub lid: u16,
+    pub sm_lid: u16,
+    pub lmc: u8,
     pub link_layer: u8,
+    pub phys_state: PhysicalPortState,
 }
 
 #[derive(Default)]

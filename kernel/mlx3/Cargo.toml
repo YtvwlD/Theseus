@@ -19,7 +19,7 @@ strum_macros = "0.26"
 spin = "0.9.4"
 sync_irq = { path = "../../libs/sync_irq" }
 volatile = "0.2.7"
-zerocopy = "0.5.0"
+zerocopy = "0.5.2"
 
 [lib]
 crate-type = ["rlib"]

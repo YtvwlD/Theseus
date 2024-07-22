@@ -252,7 +252,8 @@ pub fn ibv_query_port(
 pub fn ibv_query_gid(
     context: &ibv_context, port_num: u8, index: i32,
 ) -> Result<ibv_gid> {
-    todo!()
+    // TODO: figure out how to actually do this as the Nautilus driver can't
+    Ok(ibv_gid { raw: [0; 16] })
 }
 
 /// Allocate a protection domain

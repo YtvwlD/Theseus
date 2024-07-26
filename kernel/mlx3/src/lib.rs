@@ -26,7 +26,7 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_device_attr, ibv_port_attr, ibv_qp_cap, ibv_qp_type};
+use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_cap, ibv_qp_type};
 use pci::PciDevice;
 use port::Port;
 use queue_pair::QueuePair;
@@ -241,12 +241,39 @@ impl ConnectX3Nic {
         qp.destroy(&mut cmd)?;
         Ok(())
     }
+
+    /// Create a memory region and return its index, lkey and rkey.
+    /// 
+    /// This is used by ibv_reg_mr.
+    pub fn create_mr<T>(
+        &mut self, data: &mut [T], access: ibv_access_flags,
+    ) -> Result<(u32, u32, u32), &'static str> {
+        let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        memory_regions.alloc_dmpt(
+            &mut cmd, self.capabilities.as_ref().unwrap(),
+            self.offsets.as_mut().unwrap(), data, None, access,
+        )
+    }
+
+    /// Destroy a memory region.
+    pub fn destroy_mr(&mut self, index: u32) -> Result<(), &'static str> {
+        let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        memory_regions.destroy(&mut cmd, index)
+    }
 }
 
 impl Drop for ConnectX3Nic {
     fn drop(&mut self) {
         let mut cmd = CommandInterface::new(&mut self.config_regs)
             .expect("failed to get command interface");
+        if let Some(icm_tables) = self.icm_tables.as_mut() {
+            icm_tables
+                .memory_regions()
+                .destroy_all(&mut cmd)
+                .unwrap()
+        }
         while let Some(qp) = self.qps.pop() {
             qp
                 .destroy(&mut cmd)
@@ -337,6 +364,13 @@ impl Offsets {
     fn alloc_scq_db(&mut self) -> usize {
         let res = self.next_sqc_doorbell_index;
         self.next_sqc_doorbell_index += 1;
+        res
+    }
+    
+    /// Allocate a dmpt offset.
+    fn alloc_dmpt(&mut self) -> usize {
+        let res = self.next_dmpt;
+        self.next_dmpt += 256;
         res
     }
 }

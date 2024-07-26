@@ -70,10 +70,23 @@ pub struct ibv_gid {
     pub raw: [u8; 16],
 }
 
-pub struct ibv_mr {
+pub struct ibv_mr<'pd> {
+    pd: &'pd ibv_pd<'pd>,
+    index: u32,
     pub lkey: u32,
     pub rkey: u32,
 }
+
+impl Drop for ibv_mr<'_> {
+    fn drop(&mut self) {
+        self.pd
+            .context
+            .lock()
+            .destroy_mr(self.index)
+            .expect("failed to destroy memory region")
+    }
+}
+
 pub struct ibv_pd<'ctx> {
     context: &'ctx ibv_context,
 }
@@ -284,10 +297,14 @@ pub fn ibv_alloc_pd(context: &ibv_context) -> Result<ibv_pd> {
 }
 
 /// Register a memory region
-pub fn ibv_reg_mr<T>(
-    pd: &ibv_pd, data: &mut [T], access: ibv_access_flags,
-) -> Result<ibv_mr> {
-    todo!()
+pub fn ibv_reg_mr<'pd, T>(
+    pd: &'pd ibv_pd, data: &mut [T], access: ibv_access_flags,
+) -> Result<ibv_mr<'pd>> {
+    let (index, lkey, rkey) = pd.context
+        .lock()
+        .create_mr(data, access)
+        .map_err(|s| Error::new(ErrorKind::Other, s))?;
+    Ok(ibv_mr { pd, index, lkey, rkey })
 }
 
 /// Create a completion queue

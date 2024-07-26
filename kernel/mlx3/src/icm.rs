@@ -1,9 +1,12 @@
+use core::mem::size_of;
+
 use alloc::vec::Vec;
-use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use modular_bitfield_msb::bitfield;
+use memory::{create_contiguous_mapping, get_kernel_mmi_ref, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
+use mlx_infiniband::ibv_access_flags;
+use modular_bitfield_msb::{bitfield, prelude::{B10, B11, B21, B24, B28, B3, B4, B40, B7}};
 use zerocopy::AsBytes;
 
-use crate::{cmd::{CommandInterface, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile};
+use crate::{cmd::{CommandInterface, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile, queue_pair::QueuePair, Offsets};
 
 pub(super) const ICM_PAGE_SHIFT: u8 = 12;
 
@@ -83,20 +86,19 @@ impl MappedIcmAuxiliaryArea {
         // caps.mtt_entry_sz below is really the MTT segment size, not the
         // raw entry size.)
         let reserved_mtts = (
-            (1 << caps.log2_rsvd_mtts() as usize) * caps.mtt_entry_sz() as usize
-        ).next_multiple_of(64) / caps.mtt_entry_sz() as usize;
-        let mr_table = MrTable {
-            mtt_table: self.init_icm_table(
+            (1 << caps.log2_rsvd_mtts() as u64) * caps.mtt_entry_sz() as u64
+        ).next_multiple_of(64) / caps.mtt_entry_sz() as u64;
+        let mr_table = MrTable::new(
+            self.init_icm_table(
                 cmd, caps.mtt_entry_sz(), profile.num_mtts,
-                reserved_mtts, profile.init_hca.tpt_mtt_base(),
+                reserved_mtts.try_into().unwrap(), profile.init_hca.tpt_mtt_base(),
             )?,
-            dmpt_table: self.init_icm_table(
+            self.init_icm_table(
                 cmd, caps.d_mpt_entry_sz(), profile.num_mpts,
                 1 << caps.log2_rsvd_mrws(), profile.init_hca.tpt_dmpt_base(),
             )?,
             reserved_mtts,
-            offset: 0,
-        };
+        );
         let qp_table = QpTable {
             table: self.init_icm_table(
                 cmd, caps.qpc_entry_sz(), profile.init_hca.num_qps(),
@@ -243,21 +245,31 @@ struct SrqTable {
 pub(super) struct MrTable {
     mtt_table: IcmTable,
     dmpt_table: IcmTable,
-    reserved_mtts: usize,
-    offset: usize,
+    reserved_mtts: u64,
+    offset: u64,
+    regions: Vec<MemoryRegion>,
     // TODO
 }
 impl MrTable {
+    fn new(
+        mtt_table: IcmTable, dmpt_table: IcmTable, reserved_mtts: u64,
+    ) -> Self {
+        Self {
+            mtt_table, dmpt_table, reserved_mtts, offset: 0, regions: Vec::new(),
+        }
+    }
+
     /// Allocate MTT entries for an existing buffer.
-    // TODO: move buffer creation here, perhaps?
     pub(crate) fn alloc_mtt(
         &mut self, cmd: &mut CommandInterface, caps: &Capabilities,
-        num_entries: usize, buf: PhysicalAddress,
-    ) -> Result<usize, &'static str> {
+        num_entries: usize, data_address: PhysicalAddress,
+    ) -> Result<u64, &'static str> {
+        let num_entries: u64 = num_entries.try_into().unwrap();
+        assert_ne!(num_entries, 0);
         // get the next free entry
         let addr = (
             self.reserved_mtts + self.offset
-        ) * caps.mtt_entry_sz() as usize;
+        ) * caps.mtt_entry_sz() as u64;
         self.offset += num_entries;
         
         // send it to the card
@@ -266,12 +278,113 @@ impl MrTable {
         for idx in 0..num_entries {
             let mut write_cmd = WriteMttCommand::new();
             write_cmd.set_offset((addr + idx) as u64);
-            write_cmd.set_entry((buf.value() + idx * PAGE_SIZE) as u64 | MTT_FLAG_PRESENT);
+            write_cmd.set_entry((
+                data_address.value() as u64 + idx * PAGE_SIZE as u64
+            ) | MTT_FLAG_PRESENT);
             cmd.execute_command(
                 Opcode::WriteMtt, (), &write_cmd.bytes[..], 1,
             )?;
         }
         Ok(addr)
+    }
+    
+    /// Allocate an entry in the Data Memory Protection Table and return its index, lkey and rkey.
+    /// 
+    /// This is used by ibv_reg_mr.
+    pub(super) fn alloc_dmpt<T>(
+        &mut self, cmd: &mut CommandInterface, caps: &Capabilities,
+        offsets: &mut Offsets, data: &mut [T], queue_pair: Option<&QueuePair>,
+        access: ibv_access_flags,
+    ) -> Result<(u32, u32, u32), &'static str> {
+        let size = data.len() * size_of::<T>();
+        // translate the address to a physical one
+        let address = get_kernel_mmi_ref()
+            .ok_or("failed to get memory mapping")?
+            .lock()
+            .page_table
+            .translate(
+                VirtualAddress::new(data.as_ptr() as usize)
+                    .ok_or("slice has invalid address")?
+            )
+            .ok_or("couldn't get physical address for slice")?;
+        let mut num_pages = size / PAGE_SIZE;
+        if num_pages == 0 {
+            num_pages = 1;
+        }
+        // TODO: check if icm has sufficient space available for the new dmpt entry
+        let mtt = self.alloc_mtt(cmd, caps, num_pages, address)?;
+        let mut dmpt = DmptEntry::new();
+        dmpt.set_key(offsets.alloc_dmpt().try_into().unwrap());
+        dmpt.set_rae(true);
+        if let Some(qp) = queue_pair {
+            dmpt.set_bound_to_qp(true);
+            dmpt.set_qp_number(qp.number().try_into().unwrap());
+        }
+        dmpt.set_start(address.value().try_into().unwrap());
+        dmpt.set_length(size.try_into().unwrap());
+        dmpt.set_entity_size(size.ilog2());
+        dmpt.set_mtt_addr(mtt);
+        dmpt.set_mtt_size(num_pages.try_into().unwrap());
+        dmpt.set_mio(true);
+        dmpt.set_region(true);
+        // local read is always allowed
+        dmpt.set_local_read(true);
+        if access.contains(ibv_access_flags::IBV_ACCESS_LOCAL_WRITE) {
+            dmpt.set_local_write(true);
+        }
+        if access.contains(ibv_access_flags::IBV_ACCESS_REMOTE_READ) {
+            dmpt.set_remote_read(true);
+        }
+        if access.contains(ibv_access_flags::IBV_ACCESS_REMOTE_WRITE) {
+            dmpt.set_remote_write(true);
+        }
+        let dmpt_index = dmpt.index();
+        cmd.execute_command(
+            Opcode::Sw2HwMpt, (), &dmpt.into_bytes()[..], dmpt_index,
+        )?;
+        // get the updated version back
+        let dmpt_output_page: MappedPages = cmd.execute_command(
+            Opcode::QueryMpt, (), (), dmpt_index,
+        )?;
+        let dmpt = DmptEntry::from_bytes(dmpt_output_page.as_slice(
+            0, size_of::<DmptEntry>()
+        )?.try_into().unwrap());
+        assert_eq!(dmpt_index, dmpt.index());
+        trace!(
+            "memory region of size {} with mem key {} created successfully",
+            dmpt.length(), dmpt.key(),
+        );
+        // dmpt.lkey() would be the lkey if we were using protection domains.
+        // Just put the reserved lkey here, so that addresses are physical.
+        let dmpt_lkey = caps.reserved_lkey();
+        // .key is the rkey
+        let dmpt_key = dmpt.key();
+
+        self.regions.push(MemoryRegion { dmpt: Some(dmpt) });
+        Ok((dmpt_index, dmpt_lkey, dmpt_key))
+    }
+    
+    /// Tear down all memory regions.
+    pub(super) fn destroy_all(
+        &mut self, cmd: &mut CommandInterface,
+    ) -> Result<(), &'static str> {
+        while let Some(region) = self.regions.pop() {
+            region.destroy(cmd)?;
+        }
+        Ok(())
+    }
+    
+    /// Tear down a memory region.
+    pub(super) fn destroy(
+        &mut self, cmd: &mut CommandInterface, index: u32,
+    ) -> Result<(), &'static str> {
+        let (idx, _) = self.regions
+            .iter()
+            .enumerate()
+            .find(|(_, region)| region.dmpt.as_ref().unwrap().index() == index)
+            .ok_or("dmpt entry not found")?;
+        let dmpt = self.regions.remove(idx);
+        dmpt.destroy(cmd)
     }
 }
 
@@ -284,6 +397,89 @@ struct WriteMttCommand {
     /// the physical address, except for the last three bits
     /// (those must be zero); the last bit is the present bit
     entry: u64,
+}
+
+/// This is a wrapper around DmptEntry, so that we can implement Drop.
+struct MemoryRegion {
+    dmpt: Option<DmptEntry>
+}
+
+impl MemoryRegion {
+    /// Tear down this region.
+    fn destroy(
+        mut self, cmd: &mut CommandInterface,
+    ) -> Result<(), &'static str> {
+        let dmpt = self.dmpt.take().unwrap();
+        // TODO: free ICM space
+        cmd.execute_command(Opcode::Hw2SwMpt, (), (), dmpt.index())?;
+        Ok(())
+    }
+}
+
+impl Drop for MemoryRegion {
+    fn drop(&mut self) {
+        if self.dmpt.is_some() {
+            panic!("please destroy instead of dropping")
+        }
+    }
+}
+
+/// An entry of the Data Memory Protection Table.
+// TODO: keep actual references, so that data, eq and qp live long enough
+#[bitfield]
+struct DmptEntry {
+    status: B4,
+    #[skip] __: B10,
+    mio: bool,
+    #[skip] __: B3,
+    remote_write: bool,
+    remote_read: bool,
+    local_write: bool,
+    local_read: bool,
+    #[skip] __: bool,
+    region: bool,
+    #[skip] __: u8,
+    qp_number: B24,
+    bound_to_qp: bool,
+    #[skip] __: B7,
+    /// This index is the key, but formatted as `key[7:0],key[31:8]`,
+    /// so we have to provide our own getter and setter implementation.
+    index: u32,
+    #[skip] __: B3,
+    rae: bool,
+    #[skip] __: B4,
+    pd: B24,
+    start: u64,
+    length: u64,
+    lkey: u32,
+    #[skip] __: u8,
+    win_cnt: B24,
+    #[skip] __: B28,
+    mtt_rep: B4,
+    #[skip] __: B24,
+    // the last three bits must be zero
+    mtt_addr: B40,
+    mtt_size: u32,
+    #[skip] __: B11,
+    entity_size: B21,
+    #[skip] __: B11,
+    first_byte_offset: B21,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+    #[skip] __: u128,
+}
+
+impl DmptEntry {
+    /// Get the memory key.
+    fn key(&self) -> u32 {
+        self.index() >> 24 | self.index() << 8
+    }
+
+    /// Set the memory key.
+    fn set_key(&mut self, key: u32) {
+        self.set_index(key << 24 | key >> 8)
+    }
 }
 
 /// An ICM mapping.

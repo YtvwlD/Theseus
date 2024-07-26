@@ -27,7 +27,7 @@ pub(super) struct CompletionQueue {
     memory: Option<(MappedPages, PhysicalAddress)>,
     uar_idx: usize,
     doorbell_page: MappedPages,
-    mtt: usize,
+    mtt: u64,
     arm_sequence_number: u32,
     consumer_index: u32,
     // TODO: bind the lifetime to the one of the event queue
@@ -71,7 +71,7 @@ impl CompletionQueue {
             eq_number = Some(eq.number());
         }
         ctx.set_log_page_size(PAGE_SHIFT - ICM_PAGE_SHIFT);
-        ctx.set_mtt_base_addr(mtt.try_into().unwrap());
+        ctx.set_mtt_base_addr(mtt);
         ctx.set_doorbell_record_addr(doorbell_address.value() as u64);
         cmd.execute_command(
             Opcode::Sw2HwCq, (), &ctx.bytes[..], number.try_into().unwrap(),

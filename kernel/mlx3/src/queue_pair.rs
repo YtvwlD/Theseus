@@ -35,7 +35,7 @@ pub(super) struct QueuePair {
     memory: Option<(MappedPages, PhysicalAddress)>,
     uar_idx: usize,
     doorbell_page: MappedPages,
-    mtt: usize,
+    mtt: u64,
 }
 
 impl QueuePair {

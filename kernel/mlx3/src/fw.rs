@@ -407,7 +407,7 @@ pub(super) struct Capabilities {
     pub(super) d_mpt_entry_sz: u16,
     bmme_flags: u16,
     phv_en: u16,
-    rsvd_lkey: u32,
+    pub(super) reserved_lkey: u32,
     diag_flags: u32,
     pub(super) max_icm_sz: u64,
     #[skip] __: u8,

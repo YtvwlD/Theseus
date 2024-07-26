@@ -42,7 +42,7 @@ pub(super) struct EventQueue {
     num_entries: usize,
     num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
-    mtt: usize,
+    mtt: u64,
     consumer_index: u32,
     /// IRQ number on bus
     intr_vector: Option<u8>,
@@ -92,7 +92,7 @@ impl EventQueue {
             ctx.set_intr(base_vector.try_into().unwrap());
         }
         ctx.set_log_page_size(PAGE_SHIFT - ICM_PAGE_SHIFT);
-        ctx.set_mtt_base_addr(mtt.try_into().unwrap());
+        ctx.set_mtt_base_addr(mtt);
         cmd.execute_command(
             Opcode::Sw2HwEq, (), &ctx.bytes[..],
             number.try_into().unwrap(),

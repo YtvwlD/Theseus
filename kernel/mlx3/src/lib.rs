@@ -26,7 +26,7 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_cap, ibv_qp_type};
+use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type};
 use pci::PciDevice;
 use port::Port;
 use queue_pair::QueuePair;
@@ -175,7 +175,7 @@ impl ConnectX3Nic {
     /// Create a completion queue and return its number.
     /// 
     /// This is used by ibv_create_cq.
-    pub fn create_cq(&mut self, min_num_entries: i32) -> Result<usize, &'static str> {
+    pub fn create_cq(&mut self, min_num_entries: i32) -> Result<u32, &'static str> {
         let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
         let mut cq = CompletionQueue::new(
@@ -190,7 +190,7 @@ impl ConnectX3Nic {
     }
 
     /// Destroy a completion queue.
-    pub fn destroy_cq(&mut self, number: usize) -> Result<(), &'static str> {
+    pub fn destroy_cq(&mut self, number: u32) -> Result<(), &'static str> {
         let (index, _) = self.cqs
             .iter()
             .enumerate()
@@ -206,9 +206,9 @@ impl ConnectX3Nic {
     ///
     /// This is used by ibv_create_qp.
     pub fn create_qp(
-        &mut self, qp_type: ibv_qp_type::Type, send_cq_number: usize,
-        receive_cq_number: usize, ib_caps: &mut ibv_qp_cap,
-    ) -> Result<usize, &'static str> {
+        &mut self, qp_type: ibv_qp_type::Type, send_cq_number: u32,
+        receive_cq_number: u32, ib_caps: &mut ibv_qp_cap,
+    ) -> Result<u32, &'static str> {
         let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
         let send_cq = self.cqs
@@ -229,8 +229,22 @@ impl ConnectX3Nic {
         Ok(number)
     }
 
+    /// Modify a queue pair.
+    /// 
+    /// This is used by ibv_modify_qp.
+    pub fn modify_qp(
+        &mut self, number: u32,
+        attr: &ibv_qp_attr, attr_mask: ibv_qp_attr_mask,
+    ) -> Result<(), &'static str> {
+        let qp = self.qps.iter_mut()
+            .find(|qp| qp.number() == number)
+            .ok_or("invalid queue pair number")?;
+        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
+        qp.modify(&mut cmd, attr, attr_mask)
+    }
+
     /// Destroy a queue pair.
-    pub fn destroy_qp(&mut self, number: usize) -> Result<(), &'static str> {
+    pub fn destroy_qp(&mut self, number: u32) -> Result<(), &'static str> {
         let (index, _) = self.qps
             .iter()
             .enumerate()

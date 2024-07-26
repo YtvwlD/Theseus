@@ -10,7 +10,11 @@ use alloc::{string::{String, ToString}, vec::Vec};
 use bitflags::bitflags;
 use core2::io::{Error, ErrorKind, Result as Result};
 use mlx3::{get_mlx3_nic, ConnectX3Nic};
-pub use mlx_infiniband::{__be64, ibv_access_flags, ibv_device_attr, ibv_mtu, ibv_port_attr, ibv_port_state, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
+pub use mlx_infiniband::{
+    __be64, ibv_access_flags, ibv_ah_attr, ibv_device_attr, ibv_gid, ibv_mtu,
+    ibv_port_attr, ibv_port_state,
+    ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type,
+};
 use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
 pub struct ibv_context_ops {
@@ -51,7 +55,7 @@ impl ibv_context {
 
 pub struct ibv_cq<'ctx> {
     context: &'ctx ibv_context,
-    number: usize,
+    number: u32,
     /// Consumer-supplied context returned for completion events
     cq_context: isize,
 }
@@ -63,11 +67,6 @@ impl Drop for ibv_cq<'_> {
             .destroy_cq(self.number)
             .expect("failed to destroy completion queue")
     }
-}
-
-#[derive(Default, Clone, Copy)]
-pub struct ibv_gid {
-    pub raw: [u8; 16],
 }
 
 pub struct ibv_mr<'pd> {
@@ -114,25 +113,6 @@ impl Drop for ibv_qp<'_, '_> {
     }
 }
 
-#[derive(Default)]
-pub struct ibv_qp_attr {
-    pub qp_state: ibv_qp_state,
-    pub path_mtu: ibv_mtu,
-    pub rq_psn: u32,
-    pub sq_psn: u32,
-    pub dest_qp_num: u32,
-    pub qp_access_flags: ibv_access_flags,
-    pub ah_attr: ibv_ah_attr,
-    pub pkey_index: u16,
-    pub max_rd_atomic: u8,
-    pub max_dest_rd_atomic: u8,
-    pub min_rnr_timer: u8,
-    pub port_num: u8,
-    pub timeout: u8,
-    pub retry_cnt: u8,
-    pub rnr_retry: u8,
-}
-
 pub struct ibv_qp_init_attr<'cq, 'ctx> {
     pub qp_context: isize,
     pub send_cq: &'cq ibv_cq<'ctx>,
@@ -141,22 +121,6 @@ pub struct ibv_qp_init_attr<'cq, 'ctx> {
     pub cap: ibv_qp_cap,
     pub qp_type: ibv_qp_type::Type,
     pub sq_sig_all: i32,
-}
-
-#[derive(Default)]
-pub struct ibv_global_route {
-    pub dgid: ibv_gid,
-    pub hop_limit: u8,
-}
-
-#[derive(Default)]
-pub struct ibv_ah_attr {
-    pub grh: ibv_global_route,
-    pub dlid: u16,
-    pub sl: u8,
-    pub src_path_bits: u8,
-    pub is_global: u8,
-    pub port_num: u8,
 }
 
 pub mod ibv_wc_status {
@@ -168,7 +132,7 @@ pub mod ibv_wc_status {
     pub use Type::IBV_WC_GENERAL_ERR;
 }
 pub mod ibv_wc_opcode {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub enum Type {
         IBV_WC_SEND,
         IBV_WC_RDMA_WRITE,
@@ -351,7 +315,9 @@ pub fn ibv_create_qp<'ctx, 'cq>(
 pub fn ibv_modify_qp(
     qp: &mut ibv_qp, attr: &ibv_qp_attr, attr_mask: ibv_qp_attr_mask,
 ) -> Result<()> {
-    todo!()
+    qp.recv_cq.context.lock()
+        .modify_qp(qp.qp_num, attr, attr_mask)
+        .map_err(|s| Error::new(ErrorKind::Other, s))
 }
 
 /// poll a completion queue (CQ)

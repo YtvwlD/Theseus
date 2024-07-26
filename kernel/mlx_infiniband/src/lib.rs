@@ -86,12 +86,55 @@ pub enum PhysicalPortState {
     PhyTest = 7,
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct ibv_gid {
+    pub raw: [u8; 16],
+}
+
+#[derive(Default)]
+pub struct ibv_global_route {
+    pub dgid: ibv_gid,
+    pub hop_limit: u8,
+}
+
+#[derive(Default)]
+pub struct ibv_ah_attr {
+    pub grh: ibv_global_route,
+    pub dlid: u16,
+    pub sl: u8,
+    pub src_path_bits: u8,
+    pub is_global: u8,
+    pub port_num: u8,
+}
+
+#[derive(Default)]
+pub struct ibv_qp_attr {
+    pub qp_state: ibv_qp_state,
+    pub path_mtu: ibv_mtu,
+    pub qkey: u32,
+    pub rq_psn: u32,
+    pub sq_psn: u32,
+    pub dest_qp_num: u32,
+    pub qp_access_flags: ibv_access_flags,
+    pub ah_attr: ibv_ah_attr,
+    pub pkey_index: u16,
+    pub max_rd_atomic: u8,
+    pub max_dest_rd_atomic: u8,
+    pub min_rnr_timer: u8,
+    pub port_num: u8,
+    pub timeout: u8,
+    pub retry_cnt: u8,
+    pub rnr_retry: u8,
+}
+
+
 bitflags! {
     pub struct ibv_qp_attr_mask: u32 {
         const IBV_QP_STATE = 1;
         const IBV_QP_ACCESS_FLAGS = 8;
         const IBV_QP_PKEY_INDEX = 16;
         const IBV_QP_PORT = 32;
+        const IBV_QP_QKEY = 64;
         const IBV_QP_AV = 128;
         const IBV_QP_PATH_MTU = 256;
         const IBV_QP_TIMEOUT = 512;
@@ -119,7 +162,7 @@ pub struct ibv_port_attr {
     pub phys_state: PhysicalPortState,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum ibv_qp_state {
     #[default]
     IBV_QPS_RESET,

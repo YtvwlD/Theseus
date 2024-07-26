@@ -21,7 +21,7 @@ use super::{
 
 #[derive(Debug)]
 pub(super) struct CompletionQueue {
-    number: usize,
+    number: u32,
     num_entries: usize,
     num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
@@ -45,7 +45,7 @@ impl CompletionQueue {
     ) -> Result<Self, &'static str> {
         // CQE size is 32. There is 64 B support also available in CX3.
         const CQE_SIZE: usize = 32;
-        let number = offsets.alloc_cqn();
+        let number: u32 = offsets.alloc_cqn().try_into().unwrap();
         let uar_idx = offsets.alloc_scq_db();
         let num_pages = (num_entries * CQE_SIZE).next_multiple_of(PAGE_SIZE) / PAGE_SIZE;
         let memory = create_contiguous_mapping(
@@ -124,7 +124,7 @@ impl CompletionQueue {
     }
 
     /// Get the number of this completion queue.
-    pub(super) fn number(&self) -> usize {
+    pub(super) fn number(&self) -> u32 {
         self.number
     }
 }

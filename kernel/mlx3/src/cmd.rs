@@ -59,6 +59,23 @@ pub(super) enum Opcode {
     ModifyCq = 0x2c,
 
     // QP/EE commands
+    // The "Any" is there because identifiers cannot start with a number.
+    Rst2InitQp = 0x19,
+    Init2RtrQp = 0x1a,
+    Rtr2RtsQp = 0x1b,
+    Rts2RtsQp = 0x1c,
+    Sqerr2RtsQp = 0x1d,
+    Any2ErrQp = 0x1e,
+    Rts2SqdQp = 0x1f,
+    Sqd2RtsQp = 0x20,
+    Any2RstQp = 0x21,
+    QueryQp = 0x22,
+    Init2InitQp = 0x2d,
+    SuspendQp = 0x32,
+    UnsuspendQp = 0x33,
+    Sqd2SqdQp = 0x38,
+    UpdateQp = 0x61,
+    State2StateQp = 0x82,
 
     // special QP and management commands
     ConfSpecialQp = 0x23,

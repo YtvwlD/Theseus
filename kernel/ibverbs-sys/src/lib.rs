@@ -550,7 +550,7 @@ impl ibv_wc {
     /// the case, no immediate value was provided, and `imm_data` should be interpreted
     /// differently. See `man ibv_poll_cq` for details.
     pub fn imm_data(&self) -> Option<u32> {
-        if self.is_valid() && ((self.wc_flags & ibv_wc_flags::IBV_WC_WITH_IMM).0 != 0) {
+        if self.is_valid() && self.wc_flags.contains(ibv_wc_flags::IBV_WC_WITH_IMM) {
             Some(self.imm_data)
         } else {
             None
@@ -569,7 +569,7 @@ impl Default for ibv_wc {
             imm_data: 0,
             qp_num: 0,
             src_qp: 0,
-            wc_flags: ibv_wc_flags(0),
+            wc_flags: ibv_wc_flags::empty(),
             pkey_index: 0,
             slid: 0,
             sl: 0,

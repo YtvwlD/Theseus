@@ -162,7 +162,7 @@ pub struct ibv_port_attr {
     pub phys_state: PhysicalPortState,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum ibv_qp_state {
     #[default]
     IBV_QPS_RESET,

@@ -222,10 +222,9 @@ impl QueuePair {
             },
             // or just stay in the current state
             // We can't even set anything here.
-            (ibv_qp_state::IBV_QPS_RESET, true, ibv_qp_state::IBV_QPS_RESET)
-             | (ibv_qp_state::IBV_QPS_RESET, false, _) => {
-                Opcode::Any2RstQp
-            },
+            (ibv_qp_state::IBV_QPS_RESET, false, _) => Opcode::Any2RstQp,
+            // resetting is always possible
+            (_, true, ibv_qp_state::IBV_QPS_RESET) => Opcode::Any2RstQp,
             // nothing else is possible
             _ => return Err("invalid state transition"),
         };
@@ -247,7 +246,13 @@ impl QueuePair {
     pub(super) fn destroy(
         mut self, cmd: &mut CommandInterface,
     ) -> Result<(), &'static str> {
-        // TODO: transition to RESET if not already there
+        trace!("destroying QP {}..", self.number);
+        if self.state != ibv_qp_state::IBV_QPS_RESET {
+            self.modify(cmd, &ibv_qp_attr {
+                qp_state: ibv_qp_state::IBV_QPS_RESET,
+                ..Default::default()
+            }, ibv_qp_attr_mask::IBV_QP_STATE)?;
+        }
         // actually free the memory
         self.memory.take().unwrap();
         Ok(())

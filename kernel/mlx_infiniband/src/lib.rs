@@ -117,7 +117,9 @@ pub struct ibv_qp_attr {
     pub dest_qp_num: u32,
     pub qp_access_flags: ibv_access_flags,
     pub ah_attr: ibv_ah_attr,
+    pub alt_ah_attr: ibv_ah_attr,
     pub pkey_index: u16,
+    pub alt_pkey_index: u16,
     pub max_rd_atomic: u8,
     pub max_dest_rd_atomic: u8,
     pub min_rnr_timer: u8,
@@ -125,6 +127,8 @@ pub struct ibv_qp_attr {
     pub timeout: u8,
     pub retry_cnt: u8,
     pub rnr_retry: u8,
+    pub alt_port_num: u8,
+    pub alt_timeout: u8,
 }
 
 
@@ -142,6 +146,7 @@ bitflags! {
         const IBV_QP_RNR_RETRY = 2048;
         const IBV_QP_MAX_QP_RD_ATOMIC = 8192;
         const IBV_QP_RQ_PSN = 4096;
+        const IBV_QP_ALT_PATH = 16384;
         const IBV_QP_MIN_RNR_TIMER = 32768;
         const IBV_QP_SQ_PSN = 65536;
         const IBV_QP_MAX_DEST_RD_ATOMIC = 131072;

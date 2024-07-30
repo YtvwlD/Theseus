@@ -282,7 +282,7 @@ pub(super) struct Capabilities {
     #[skip] __: B4,
     num_ports: B4,
     #[skip] __: B3,
-    log_max_msg: B5,
+    pub(super) log_max_msg: B5,
     #[skip] __: u16,
     max_gid: u8,
     rate_support: u16,

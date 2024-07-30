@@ -130,6 +130,11 @@ impl Port {
             link_layer: 0, // TODO
         })
     }
+
+    /// Get the number of this port.
+    pub(super) fn number(&self) -> u8 {
+        self.number
+    }
 }
 
 impl Drop for Port {

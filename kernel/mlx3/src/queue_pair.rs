@@ -7,12 +7,12 @@ use core::mem::size_of;
 use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use mlx_infiniband::{ibv_access_flags, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
+use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
 use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B56, B6, B7, B72}};
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32};
 
-use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, icm::ICM_PAGE_SHIFT};
+use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, icm::ICM_PAGE_SHIFT, port::Port};
 
 use super::{cmd::CommandInterface, fw::Capabilities, icm::MrTable, Offsets};
 
@@ -29,6 +29,7 @@ pub(super) struct QueuePair {
     number: u32,
     state: ibv_qp_state,
     qp_type: ibv_qp_type::Type,
+    port_number: u8,
     // TODO: this seems deprecated
     is_special: bool,
     sq: WorkQueue,
@@ -53,11 +54,12 @@ impl QueuePair {
     /// This is similar to creating a completion queue or an event queue.
     pub(super) fn new(
         cmd: &mut CommandInterface, caps: &Capabilities, offsets: &mut Offsets,
-        memory_regions: &mut MrTable, qp_type: ibv_qp_type::Type,
+        memory_regions: &mut MrTable, qp_type: ibv_qp_type::Type, port: &Port,
         send_cq: &CompletionQueue, receive_cq: &CompletionQueue,
         ib_caps: &mut ibv_qp_cap,
     ) -> Result<Self, &'static str> {
         let number = offsets.alloc_qpn().try_into().unwrap();
+        let port_number = port.number();
         let uar_idx = offsets.alloc_scq_db();
         let state = ibv_qp_state::IBV_QPS_RESET;
         let send_cq_number = send_cq.number();
@@ -91,8 +93,8 @@ impl QueuePair {
             .as_type_mut(0)?;
         doorbell.receive_wqe_index.write(0.into());
         let qp = Self {
-            number, state, qp_type, is_special, sq, rq, send_cq_number,
-            receive_cq_number, memory: Some(memory), uar_idx,
+            number, state, qp_type, port_number, is_special, sq, rq,
+            send_cq_number, receive_cq_number, memory: Some(memory), uar_idx,
             doorbell_page, doorbell_address, mtt,
         };
         trace!("created new QP: {qp:?}");
@@ -103,7 +105,7 @@ impl QueuePair {
     /// 
     /// This is used by ibv_modify_qp.
     pub(super) fn modify(
-        &mut self, cmd: &mut CommandInterface,
+        &mut self, cmd: &mut CommandInterface, caps: &Capabilities,
         attr: &ibv_qp_attr, attr_mask: ibv_qp_attr_mask,
     ) -> Result<(), &'static str> {
         // TODO: this discards any parameters that aren't needed for the current transition
@@ -111,6 +113,7 @@ impl QueuePair {
         const _PATH_MIGRATION_STATE_ARMED: u8 = 0x0;
         const _PATH_MIGRATION_STATE_REARM: u8 = 0x1;
         const PATH_MIGRATION_STATE_MIGRATED: u8 = 0x3;
+        const DEFAULT_SCHED_QUEUE: u8 = 0x83;
         // create the context
         let mut context = QueuePairContext::new();
         let mut param_mask = OptionalParameterMask::empty();
@@ -228,7 +231,111 @@ impl QueuePair {
 
             // init -> rtr
             (ibv_qp_state::IBV_QPS_INIT, true, ibv_qp_state::IBV_QPS_RTR) => {
-                todo!()
+                // set required fields
+                // TODO: this might have been set in an earlier call
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PATH_MTU) {
+                    context.set_mtu(attr.path_mtu as u8);
+                } else {
+                    // default to the highest one
+                    context.set_mtu(ibv_mtu::Mtu4096 as u8);
+                }
+                context.set_msg_max(caps.log_max_msg());
+                // RC and UC need remote_qpn
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC
+                    || self.qp_type == ibv_qp_type::IBV_QPT_UC {
+                    // TODO: this might have been set in an earlier call
+                    assert!(attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_DEST_QPN
+                    ));
+                    context.set_remote_qpn(attr.dest_qp_num);
+                }
+                // TODO: rra_max, ric, next_recv_psn, qos_vport, roce_mode,
+                // TODO: rate_limit_index
+                assert!(attr_mask.contains(ibv_qp_attr_mask::IBV_QP_AV));
+                let mut primary_path_one = context.primary_path_one();
+                // RC and RC need rlid
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC
+                    || self.qp_type == ibv_qp_type::IBV_QPT_UC {
+                    primary_path_one.set_rlid(attr.ah_attr.dlid);
+                }
+                primary_path_one.set_grh(false);
+                primary_path_one.set_mlid(0); // might be slid
+                context.set_primary_path_one(primary_path_one);
+                let mut primary_path_two = context.primary_path_two();
+                primary_path_two.set_sched_queue(
+                    DEFAULT_SCHED_QUEUE
+                        | ((self.port_number - 1) << 6)
+                        | ((attr.ah_attr.sl & 0xf) << 2)
+                );
+                context.set_primary_path_two(primary_path_two);
+                // TODO: mgid_index, ud_force_mgid, max_stat_rate, hop_limit,
+                // TODO: tclass, flow_label, rgid, link_type, if_counter_index
+                // set the optional parameters
+                // TODO: vsd
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC {
+                    if attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_MIN_RNR_TIMER
+                    ) {
+                        // TODO: check encoding
+                        context.set_min_rnr_nak(attr.min_rnr_timer);
+                        param_mask.insert(OptionalParameterMask::MIN_RNR_NAK);
+                    }
+                }
+                if self.qp_type == ibv_qp_type::IBV_QPT_UD {
+                    if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_QKEY) {
+                        context.set_qkey(attr.qkey);
+                        param_mask.insert(OptionalParameterMask::QKEY);
+                    }
+                }
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
+                    let mut primary_path = context.primary_path_one();
+                    primary_path.set_pkey_index(
+                        attr.pkey_index.try_into().unwrap()
+                    );
+                    context.set_primary_path_one(primary_path);
+                    param_mask.insert(OptionalParameterMask::PKEY_INDEX);
+                }
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC
+                    || self.qp_type == ibv_qp_type::IBV_QPT_UC {
+                    if attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_ACCESS_FLAGS
+                    ) {
+                        context.set_remote_write(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_WRITE
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_WRITE);
+                        context.set_remote_atomic(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_ATOMIC
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_ATOMIC);
+                        context.set_remote_read(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_READ
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_READ);
+                    }
+                    if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_ALT_PATH) {
+                        let mut alt_path_one = context.alternate_path_one();
+                        alt_path_one.set_pkey_index(
+                            attr.alt_pkey_index.try_into().unwrap()
+                        );
+                        alt_path_one.set_rlid(attr.alt_ah_attr.dlid);
+                        // TODO: ack_timeout, mgid_index, ud_force_mgid,
+                        // TODO: max_stat_rate, hop_limit, tclass, flow_label,
+                        // TODO: rgid, link_type, if_counter_index, vlan_index,
+                        // TODO: dmac, cv
+                        context.set_alternate_path_one(alt_path_one);
+                        param_mask.insert(
+                            OptionalParameterMask::ALTERNATE_PATH
+                        );
+                    }
+                }
+                Opcode::Init2RtrQp
             }
             // or just stay in the current state
             (ibv_qp_state::IBV_QPS_INIT, true, ibv_qp_state::IBV_QPS_INIT)
@@ -297,11 +404,11 @@ impl QueuePair {
 
     /// Destroy this queue pair.
     pub(super) fn destroy(
-        mut self, cmd: &mut CommandInterface,
+        mut self, cmd: &mut CommandInterface, caps: &Capabilities,
     ) -> Result<(), &'static str> {
         trace!("destroying QP {}..", self.number);
         if self.state != ibv_qp_state::IBV_QPS_RESET {
-            self.modify(cmd, &ibv_qp_attr {
+            self.modify(cmd, caps, &ibv_qp_attr {
                 qp_state: ibv_qp_state::IBV_QPS_RESET,
                 ..Default::default()
             }, ibv_qp_attr_mask::IBV_QP_STATE)?;
@@ -544,9 +651,9 @@ struct QueuePairContext {
     primary_path_one: QueuePairPathPartOne,
     primary_rgid: u128,
     primary_path_two: QueuePairPathPartTwo,
-    alternative_path_one: QueuePairPathPartOne,
-    alternative_rgid: u128,
-    alternative_path_two: QueuePairPathPartTwo,
+    alternate_path_one: QueuePairPathPartOne,
+    alternate_rgid: u128,
+    alternate_path_two: QueuePairPathPartTwo,
     #[skip] __: B72,
     next_send_psn: B24,
     #[skip] __: u8,
@@ -561,7 +668,7 @@ struct QueuePairContext {
     remote_write: bool,
     remote_atomic: bool,
     #[skip] __: B16,
-    rnr_nak: B5,
+    min_rnr_nak: B5,
     next_recv_psn: B24,
     #[skip] __: u16,
     xrcd: u16,
@@ -602,7 +709,7 @@ struct QueuePairPathPartOne {
     pkey_index: B7,
     #[skip] __: u8,
     grh: bool,
-    #[skip] __: B7,
+    mlid: B7,
     rlid: u16,
     ack_timeout: B5,
     #[skip] __: B4,
@@ -635,10 +742,12 @@ struct StateTransitionCommandParameter {
 
 bitflags! {
     struct OptionalParameterMask: u32 {
+        const ALTERNATE_PATH = 1 << 0;
         const REMOTE_READ = 1 << 1;
         const REMOTE_ATOMIC = 1 << 2;
         const REMOTE_WRITE = 1 << 3;
         const PKEY_INDEX = 1 << 4;
         const QKEY = 1 << 5;
+        const MIN_RNR_NAK = 1 << 6;
     }
 }

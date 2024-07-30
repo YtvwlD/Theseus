@@ -222,7 +222,8 @@ impl ConnectX3Nic {
         let qp = QueuePair::new(
             &mut cmd, self.capabilities.as_ref().unwrap(),
             self.offsets.as_mut().unwrap(), memory_regions, qp_type,
-            send_cq, receive_cq, ib_caps,
+            // TODO: somehow select the right port
+            &self.ports[0], send_cq, receive_cq, ib_caps,
         )?;
         let number = qp.number();
         self.qps.push(qp);
@@ -240,7 +241,9 @@ impl ConnectX3Nic {
             .find(|qp| qp.number() == number)
             .ok_or("invalid queue pair number")?;
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
-        qp.modify(&mut cmd, attr, attr_mask)
+        qp.modify(
+            &mut cmd, self.capabilities.as_ref().unwrap(), attr, attr_mask,
+        )
     }
 
     /// Destroy a queue pair.
@@ -252,7 +255,7 @@ impl ConnectX3Nic {
             .ok_or("queue pair not found")?;
         let qp = self.qps.remove(index);
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
-        qp.destroy(&mut cmd)?;
+        qp.destroy(&mut cmd, self.capabilities.as_ref().unwrap())?;
         Ok(())
     }
 
@@ -290,7 +293,7 @@ impl Drop for ConnectX3Nic {
         }
         while let Some(qp) = self.qps.pop() {
             qp
-                .destroy(&mut cmd)
+                .destroy(&mut cmd, self.capabilities.as_ref().unwrap())
                 .unwrap()
         }
         while let Some(cq) = self.cqs.pop() {

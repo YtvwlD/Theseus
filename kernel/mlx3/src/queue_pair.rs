@@ -4,6 +4,7 @@
 
 use core::mem::size_of;
 
+use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use mlx_infiniband::{ibv_access_flags, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
@@ -112,6 +113,7 @@ impl QueuePair {
         const PATH_MIGRATION_STATE_MIGRATED: u8 = 0x3;
         // create the context
         let mut context = QueuePairContext::new();
+        let mut param_mask = OptionalParameterMask::empty();
         // get the right state transition
         let opcode = match (self.state, attr_mask.contains(
                 ibv_qp_attr_mask::IBV_QP_STATE
@@ -223,6 +225,56 @@ impl QueuePair {
             // or just stay in the current state
             // We can't even set anything here.
             (ibv_qp_state::IBV_QPS_RESET, false, _) => Opcode::Any2RstQp,
+
+            // init -> rtr
+            (ibv_qp_state::IBV_QPS_INIT, true, ibv_qp_state::IBV_QPS_RTR) => {
+                todo!()
+            }
+            // or just stay in the current state
+            (ibv_qp_state::IBV_QPS_INIT, true, ibv_qp_state::IBV_QPS_INIT)
+             | (ibv_qp_state::IBV_QPS_INIT,false, _) => {
+                // can update qkey for UD
+                if self.qp_type == ibv_qp_type::IBV_QPT_UD {
+                    if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_QKEY) {
+                        context.set_qkey(attr.qkey);
+                        param_mask.insert(OptionalParameterMask::QKEY);
+                    }
+                }
+                // can update pkey_index
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
+                    let mut primary_path = context.primary_path_one();
+                    primary_path.set_pkey_index(
+                        attr.pkey_index.try_into().unwrap()
+                    );
+                    context.set_primary_path_one(primary_path);
+                    param_mask.insert(OptionalParameterMask::PKEY_INDEX);
+                }
+                // can update access flags for RC and UC
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC
+                    || self.qp_type == ibv_qp_type::IBV_QPT_UC {
+                    if attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_ACCESS_FLAGS
+                    ) {
+                        context.set_remote_write(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_WRITE
+                            )
+                        );
+                        context.set_remote_atomic(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_ATOMIC
+                            )
+                        );
+                        context.set_remote_read(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_READ
+                            )
+                        );
+                    }
+                }
+                Opcode::Init2InitQp
+            },
+
             // resetting is always possible
             (_, true, ibv_qp_state::IBV_QPS_RESET) => Opcode::Any2RstQp,
             // nothing else is possible
@@ -230,6 +282,7 @@ impl QueuePair {
         };
         // actually execute the command
         let mut input = StateTransitionCommandParameter::new_zeroed();
+        input.opt_param_mask.set(param_mask.bits());
         input.qpc_data = context.into_bytes();
         cmd.execute_command(
             opcode, (), input.as_bytes(), self.number,
@@ -578,4 +631,14 @@ struct StateTransitionCommandParameter {
     _reserved: u32,
     qpc_data: [u8; 248],
     _reserved2: [u8; 252],
+}
+
+bitflags! {
+    struct OptionalParameterMask: u32 {
+        const REMOTE_READ = 1 << 1;
+        const REMOTE_ATOMIC = 1 << 2;
+        const REMOTE_WRITE = 1 << 3;
+        const PKEY_INDEX = 1 << 4;
+        const QKEY = 1 << 5;
+    }
 }

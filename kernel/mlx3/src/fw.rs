@@ -582,7 +582,7 @@ pub(super) struct DoorbellEq {
 pub(super) struct DoorbellPage {
     _padding1: u128,
     _padding2: u32,
-    send_queue_number: WriteOnly<U32<BigEndian>>,
+    pub(super) send_queue_number: WriteOnly<U32<BigEndian>>,
     _padding3: u64,
 
     // CQ

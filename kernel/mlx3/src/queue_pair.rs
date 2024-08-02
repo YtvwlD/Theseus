@@ -7,19 +7,18 @@ use core::mem::size_of;
 use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
-use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type, ibv_recv_wr};
+use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type, ibv_recv_wr, ibv_send_wr, ibv_send_wr_wr, ibv_sge, ibv_wr_opcode};
 use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B53, B56, B6, B7}};
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, icm::{translate_to_physical, ICM_PAGE_SHIFT}, port::Port};
+use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, fw::DoorbellPage, icm::{translate_to_physical, ICM_PAGE_SHIFT}, port::Port};
 
 use super::{cmd::CommandInterface, fw::Capabilities, icm::MrTable, Offsets};
 
 const IB_SQ_MIN_WQE_SHIFT: u32 = 6;
 const IB_MAX_HEADROOM: u32 = 2048;
 const IB_SQ_MAX_SPARE: u32 = ib_sq_headroom(IB_SQ_MIN_WQE_SHIFT);
-const INVALID_LKEY: u32 = 0x100;
 
 const fn ib_sq_headroom(shift: u32) -> u32 {
     (IB_MAX_HEADROOM >> shift) + 1
@@ -214,15 +213,16 @@ impl QueuePair {
                 // ownership bits of the send queue are set and the SQ headroom
                 // is stamped so that the hardware doesn't start processing
                 // stale work requests.
+                let memory = self.memory.as_mut().unwrap();
                 for i in 0..self.sq.wqe_cnt {
                     let ctrl: &mut WqeControlSegment = self.sq.get_element(
-                        self.memory.as_mut().unwrap(), i,
+                        memory, i,
                     )?;
                     ctrl.owner_opcode = (1 << 31).into();
                     ctrl.vlan_cv_f_ds = u32::to_be(
                         1 << (self.sq.wqe_shift - 4)
                     ).into();
-                    ctrl.stamp();
+                    self.sq.stamp_wqe(memory, i)?;
                 }
                 Opcode::Rst2InitQp
             },
@@ -523,20 +523,14 @@ impl QueuePair {
                 let elem: &mut WqeDataSegment = self.rq.get_element(
                     self.memory.as_mut().unwrap(), index + sge_index,
                 )?;
-                elem.byte_count = sge.length.into();
-                elem.lkey = sge.lkey.into();
-                elem.addr = (translate_to_physical(VirtualAddress::new(
-                    sge.addr.try_into().unwrap()
-                ).ok_or("sge has invalid address")?)?.value() as u64).into();
+                *elem = WqeDataSegment::from_sge(sge)?;
                 sge_index += 1;
             }
             // fill the last one
             let last_elem: &mut WqeDataSegment = self.rq.get_element(
                     self.memory.as_mut().unwrap(), index + sge_index,
             )?;
-            last_elem.byte_count = 0.into();
-            last_elem.lkey = INVALID_LKEY.into();
-            last_elem.addr = 0.into();
+            *last_elem = WqeDataSegment::last();
             num_req += 1;
             index = (index + 1) & (self.rq.wqe_cnt - 1);
             // TODO: support multiple work requests
@@ -553,6 +547,135 @@ impl QueuePair {
         doorbell.receive_wqe_index.write(
             u16::try_from(self.rq.head).unwrap().into()
         );
+        Ok(())
+    }
+
+    /// Post a work request to send data.
+    /// 
+    /// This is used by ibv_post_send.
+    pub(super) fn post_send(
+        &mut self, doorbells: &mut [MappedPages], wr: &mut ibv_send_wr,
+        use_blue_flame: bool,
+    ) -> Result<(), &'static str> {
+        if self.state != ibv_qp_state::IBV_QPS_RTS {
+            return Err("queue pair cannot send in this state");
+        }
+        // TODO: the Nautilus driver uses sq.next_wqe
+        let mut index = self.sq.head;
+        let mut current = Some(wr);
+        let mut num_req = 0;
+        let memory = self.memory.as_mut().unwrap();
+        while current.is_some() {
+            let curr = current.take().unwrap();
+            // make sure that we're not overflowing
+            if self.sq.would_overflow(num_req) {
+                return Err("send queue would overflow");
+            }
+            // check that this work request is not too big
+            if u32::try_from(curr.num_sge).unwrap() > self.sq.max_gs {
+                return Err("work request has too many sges");
+            }
+            let ctrl_addr = {
+                let ctrl: &mut WqeControlSegment = self.sq.get_element(
+                    // wrap around
+                    memory, index & (self.sq.wqe_cnt - 1),
+                )?;
+                ctrl.vlan_cv_f_ds = 0.into();
+                ctrl.flags = WqeControlSegmentFlags::CQ_UPDATE.bits().into();
+                ctrl.flags2 = 0.into();
+                VirtualAddress::new(
+                    ctrl as *mut WqeControlSegment as usize
+                ).unwrap()
+            };
+            let mut wqe_offset = memory.0.offset_of_address(
+                ctrl_addr
+            ).unwrap();
+            wqe_offset += size_of::<WqeControlSegment>();
+            let mut wqe_size = size_of::<WqeControlSegment>();
+            match self.qp_type {
+                ibv_qp_type::IBV_QPT_RC | ibv_qp_type::IBV_QPT_UC => {
+                    // extra segments are only required for RDMA
+                    if curr.opcode == ibv_wr_opcode::IBV_WR_RDMA_READ
+                     || curr.opcode == ibv_wr_opcode::IBV_WR_RDMA_WRITE {
+                        let wqe: &mut WqeRemoteAddressSegment = memory.0
+                            .as_type_mut(wqe_offset)?;
+                        *wqe = WqeRemoteAddressSegment::from_wr(&curr.wr)?;
+                        wqe_offset += size_of::<WqeRemoteAddressSegment>();
+                        wqe_size += size_of::<WqeRemoteAddressSegment>();
+                    }
+                },
+                ibv_qp_type::IBV_QPT_UD => {
+                    let wqe: &mut WqeDatagramSegment = memory.0
+                        .as_type_mut(wqe_offset)?;
+                    *wqe = WqeDatagramSegment::from_wr(&curr.wr)?;
+                    wqe_offset += size_of::<WqeDatagramSegment>();
+                    wqe_size += size_of::<WqeDatagramSegment>();
+                },
+                _ => return Err("invalid queue pair type"),
+            }
+
+            // Write data segments in reverse order, so as to overwrite
+            // cacheline stamp last within each cacheline. This avoids issues
+            // with WQE prefetching.
+            wqe_offset += (
+                usize::try_from(curr.num_sge).unwrap() - 1
+            ) * size_of::<WqeDataSegment>();
+            for sge in curr.sg_list.iter().rev() {
+                let elem: &mut WqeDataSegment = memory.0
+                    .as_type_mut(wqe_offset)?;
+                *elem = WqeDataSegment::from_sge(sge)?;
+                wqe_offset -= size_of::<WqeDataSegment>();
+                wqe_size += size_of::<WqeDataSegment>();
+            }
+
+            // TODO: Possibly overwrite stamping in cacheline with LSO segment
+            // only after making sure all data segments are written.
+            let ctrl: &mut WqeControlSegment = self.sq.get_element(
+                // wrap around
+                memory, index & (self.sq.wqe_cnt - 1),
+            )?;
+            ctrl.vlan_cv_f_ds = u32::try_from(wqe_size / 16).unwrap().into();
+            // TODO: Make sure descriptor is fully written before setting
+            // ownership bit (because HW can start executing as soon as we do).
+            // TODO: opcode check
+            let opcode = match curr.opcode {
+                ibv_wr_opcode::IBV_WR_RDMA_WRITE => QueuePairOpcode::RdmaWrite,
+                ibv_wr_opcode::IBV_WR_SEND => QueuePairOpcode::Send,
+                ibv_wr_opcode::IBV_WR_RDMA_READ => QueuePairOpcode::RdmaRead,
+            } as u32;
+            let owner = match index & self.sq.wqe_cnt {
+                0 => 0,
+                _ => 1 << 31,
+            };
+            ctrl.owner_opcode = (owner | opcode).into();
+            // We can improve latency by not stamping the last send queue WQE
+            // until after ringing the doorbell, so only stamp here if there are
+            // still more WQEs to post.
+            if curr.next.is_some() {
+                self.sq.stamp_wqe(
+                    memory, index + self.sq.spare_wqes.unwrap(),
+                )?;
+            }
+            
+            num_req += 1;
+            index += 1;
+            // TODO: support multiple work requests
+            assert!(curr.next.is_none());
+        }
+        // return if we don't have anything to do
+        if num_req == 0 {
+            return Ok(());
+        }
+        if use_blue_flame {
+            todo!()
+        } else {
+            // TODO: Make sure that descriptors are written before doorbell.
+            let doorbell: &mut DoorbellPage = doorbells[self.uar_idx]
+                .as_type_mut(0)?;
+            doorbell.send_queue_number.write((self.number << 8).into());
+        }
+        self.sq.stamp_wqe(memory, index + self.sq.spare_wqes.unwrap() - 1)?;
+        self.sq.head += num_req;
         Ok(())
     }
 
@@ -697,6 +820,37 @@ impl WorkQueue {
             (self.offset + (index << self.wqe_shift)).try_into().unwrap()
         )
     }
+
+    /// Stamp this WQE so that it is invalid if prefetched by marking the
+    /// first four bytes of every 64 byte chunk with 0xffffffff, except for
+    /// the very first chunk of the WQE.
+    /// 
+    /// This is not part of `WqeControlSegment` because we need to access other
+    /// parts of the buffer here.
+    fn stamp_wqe(
+        &mut self, memory: &mut (MappedPages, PhysicalAddress), index: u32,
+    ) -> Result<(), &'static str> {
+        let (size, ctrl_address) = {
+            let ctrl: &mut WqeControlSegment = self.get_element(memory, index)?;
+            let size = ((
+                ctrl.vlan_cv_f_ds.get() & 0x3f
+            ) << 4).try_into().unwrap();
+            let ctrl_address = VirtualAddress::new(
+                ctrl as *mut WqeControlSegment as usize
+            ).ok_or("control segment has invalid address")?;
+            (size, ctrl_address)
+        };
+        let ctrl_offset = memory.0.offset_of_address(ctrl_address)
+            .ok_or("control segment has invalid address")?;
+        for i in (64..size).step_by(64) {
+            let bytes = memory.0.as_slice_mut(ctrl_offset, size)?;
+            bytes[i] = u8::MAX;
+            bytes[i+1] = u8::MAX;
+            bytes[i+2] = u8::MAX;
+            bytes[i+3] = u8::MAX;
+        }
+        Ok(())
+    }
     
     /// Check if this queue would overflow when adding `num_req` work requests.
     fn would_overflow(&self, num_req: u32) -> bool {
@@ -742,21 +896,20 @@ struct WqeControlSegment {
     flags2: U32<BigEndian>,
 }
 
-impl WqeControlSegment {
-    /// Stamp this WQE so that it is invalid if prefetched by marking the
-    /// first four bytes of every 64 byte chunk with 0xffffffff, except for
-    /// the very first chunk of the WQE.
-    fn stamp(&mut self) {
-        let size = ((self.vlan_cv_f_ds.get() & 0x3f) << 4).try_into().unwrap();
-        for i in (64..size).step_by(64) {
-            // TODO: make this safe
-            unsafe {
-                let wqe: *mut u32 = (self as *mut _ as *mut u8)
-                    .offset(i)
-                    .cast();
-                wqe.write(u32::MAX);
-            }
-        }
+bitflags! {
+    struct WqeControlSegmentFlags: u32 {
+        const NEC = 1 << 29;
+        const IIP = 1 << 28;
+        const ILP = 1 << 27;
+        const FENCE = 1 << 6;
+        const CQ_UPDATE = 3 << 2;
+        const SOLICITED = 1 << 1;
+        const IP_CSUM = 1 << 4;
+        const TCP_UDP_CSUM = 1 << 5;
+        const INS_CVLAN = 1 << 6;
+        const INS_SVLAN = 1 << 7;
+        const STRONG_ORDER = 1 << 7;
+        const FORCE_LOOPBACK = 1 << 0;
     }
 }
 
@@ -768,22 +921,107 @@ struct WqeDataSegment {
     addr: U64<BigEndian>,
 }
 
+impl WqeDataSegment {
+    /// Create a data segment from an sge.
+    fn from_sge(sge: &ibv_sge) -> Result<Self, &'static str> {
+        Ok(Self {
+            lkey: sge.lkey.into(),
+            addr: (translate_to_physical(VirtualAddress::new(
+                sge.addr.try_into().unwrap()
+            ).ok_or("sge has invalid address")?)?.value() as u64).into(),
+            // TODO: sending needs a barrier here before writing the byte_count
+            // field to make sure that all the data is visible before the
+            // byte_count field is set. Otherwise, if the segment begins a new
+            // cacheline, the HCA prefetcher could grab the 64-byte chunk and
+            // get a valid (!= * 0xffffffff) byte count but stale data, and end
+            // up sending the wrong data.
+            byte_count: sge.length.into(),
+        })
+    }
+    
+    /// Create a dummy element to be the last in the queue.
+    fn last() -> WqeDataSegment {
+        const INVALID_LKEY: u32 = 0x100;
+        Self { byte_count: 0.into(), lkey: INVALID_LKEY.into(), addr: 0.into() }
+    }
+}
+
 const ETH_ALEN: usize = 6;
 
+#[derive(FromBytes)]
 #[repr(C)]
 struct WqeDatagramSegment {
-    av: [u32; 8],
-    dst_qpn: u32,
-    qkey: u32,
+    av: WqeDatagramSegmentAv,
+    dst_qpn: U32<BigEndian>,
+    qkey: U32<BigEndian>,
     vlan: u16,
     mac: [u8; ETH_ALEN],
 }
 
+impl WqeDatagramSegment {
+    /// Create a datagram segment from a wr wr.
+    fn from_wr(wr: &ibv_send_wr_wr) -> Result<Self, &'static str> {
+        if let ibv_send_wr_wr::ud { ah, remote_qpn, remote_qkey } = wr {
+            Ok(Self {
+                av: WqeDatagramSegmentAv {
+                    port_pd: (ah.port << 24).into(),
+                    _reserved1: 0,
+                    g_slid: ah.slid & 0x7f,
+                    dlid: ah.dlid.into(),
+                    _reserved2: 0,
+                    gid_index: 0,
+                    stat_rate: 0,
+                    hop_limit: 0,
+                    sl_tclass_flowlabel: 0,
+                    dgid: [0; 4],
+                },
+                dst_qpn: (*remote_qpn).into(),
+                qkey: (*remote_qkey).into(),
+                vlan: 0,
+                mac: [0; ETH_ALEN],
+            })
+        } else {
+            Err("invalid wr field")
+        }
+    }
+}
+
+#[derive(FromBytes)]
+#[repr(C)]
+struct WqeDatagramSegmentAv {
+    port_pd: U32<BigEndian>,
+    _reserved1: u8,
+    g_slid: u8,
+    dlid: U16<BigEndian>,
+    _reserved2: u8,
+    gid_index: u8,
+    stat_rate: u8,
+    hop_limit: u8,
+    sl_tclass_flowlabel: u32,
+    dgid: [u32; 4],
+}
+
+#[derive(FromBytes)]
 #[repr(C)]
 struct WqeRemoteAddressSegment {
-    va: u64,
-    key: u32,
+    va: U64<BigEndian>,
+    key: U32<BigEndian>,
     rsvd: u32,
+}
+
+impl WqeRemoteAddressSegment {
+    /// Create a remote address segment from a wr wr.
+    fn from_wr(wr: &ibv_send_wr_wr) -> Result<Self, &'static str> {
+        if let ibv_send_wr_wr::rdma { remote_addr, rkey } = wr {
+            Ok(Self {
+                va: (*remote_addr).into(),
+                key: (*rkey).into(),
+                rsvd: 0,
+            })
+        } else {
+            Err("invalid wr field")
+        }
+    }
 }
 
 #[bitfield]
@@ -917,4 +1155,24 @@ bitflags! {
         const QKEY = 1 << 5;
         const MIN_RNR_NAK = 1 << 6;
     }
+}
+
+#[repr(u32)]
+enum QueuePairOpcode { 
+    Nop = 0x00, 
+    SendInval = 0x01, 
+    RdmaWrite = 0x08, 
+    RdmaWriteImm = 0x09, 
+    Send = 0x0a, 
+    SendImm = 0x0b, 
+    Lso = 0x0e, 
+    RdmaRead = 0x10, 
+    AtomicCs = 0x11, 
+    AtomicFa = 0x12, 
+    MaskedAtomicCs = 0x14, 
+    MaskedAtomicFa = 0x15, 
+    BindMw = 0x18, 
+    Fmr = 0x19, 
+    LocalInval = 0x1b, 
+    ConfigCmd = 0x1f,
 }

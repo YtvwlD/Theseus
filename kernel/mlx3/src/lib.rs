@@ -26,7 +26,7 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type, ibv_recv_wr};
+use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type, ibv_recv_wr, ibv_send_wr};
 use pci::PciDevice;
 use port::Port;
 use queue_pair::QueuePair;
@@ -269,6 +269,19 @@ impl ConnectX3Nic {
             .find(|qp| qp.number() == qp_number)
             .ok_or("invalid queue pair number")?;
         qp.post_receive(wr)
+    }
+
+    /// Post a work request to send data.
+    /// 
+    /// This is used by ibv_post_send.
+    pub fn post_send(
+        &mut self, qp_number: u32, wr: &mut ibv_send_wr
+    ) -> Result<(), &'static str> {
+        let qp = self.qps.iter_mut()
+            .find(|qp| qp.number() == qp_number)
+            .ok_or("invalid queue pair number")?;
+        // TODO: check if blue flame is available
+        qp.post_send(&mut self.doorbells, wr, false)
     }
 
     /// Create a memory region and return its index, lkey and rkey.

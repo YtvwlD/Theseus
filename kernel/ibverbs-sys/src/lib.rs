@@ -301,7 +301,9 @@ fn ibv_poll_cq(
 unsafe fn ibv_post_send(
     qp: &mut ibv_qp, wr: &mut ibv_send_wr,
 ) -> Result<()> {
-    todo!()
+    qp.send_cq.context.lock()
+        .post_send(qp.qp_num, wr)
+        .map_err(|s| Error::new(ErrorKind::Other, s))
 }
 
 /// post a list of work requests (WRs) to a receive queue

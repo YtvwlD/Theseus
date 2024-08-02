@@ -185,9 +185,47 @@ pub struct ibv_send_wr {
     pub opcode: ibv_wr_opcode,
     pub send_flags: ibv_send_flags,
     pub __bindgen_anon_1: (),
-    pub wr: (),
+    pub wr: ibv_send_wr_wr,
     pub qp_type: (),
     pub __bindgen_anon_2: (),
+}
+
+pub enum ibv_send_wr_wr {
+    rdma {
+        /// Start address of remote memory buffer
+        remote_addr: u64,
+        /// Key of the remote Memory Region
+        rkey: u32,
+    },
+    atomic {
+        /// Start address of remote memory buffer
+        remote_addr: u64,
+        /// Compare operand
+        compare_add: u64,
+        /// Swap operand
+        swap: u64,
+        /// Key of the remote Memory Region
+        rkey: u32,
+    },
+    ud {
+        /// Address handle for the remote node address
+        ah: ibv_send_wr_wr_ah,
+        remote_qpn: u32,
+        remote_qkey: u32,
+    },
+}
+
+impl Default for ibv_send_wr_wr {
+    fn default() -> Self {
+        Self::rdma { remote_addr: 0, rkey: 0, }
+    }
+}
+
+
+pub struct ibv_send_wr_wr_ah {
+    pub port: u32,
+    pub dlid: u16,
+    pub slid: u8,
 }
 
 pub struct ibv_recv_wr {
@@ -197,8 +235,11 @@ pub struct ibv_recv_wr {
     pub num_sge: i32,
 }
 
+#[derive(PartialEq)]
 pub enum ibv_wr_opcode {
+    IBV_WR_RDMA_WRITE,
     IBV_WR_SEND,
+    IBV_WR_RDMA_READ,
 }
 
 pub enum ibv_send_flags {

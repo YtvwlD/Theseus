@@ -6,9 +6,13 @@ use core::mem::size_of;
 
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use modular_bitfield_msb::{bitfield, specifiers::{B2, B24, B3, B40, B48, B5, B6}};
+use mlx_infiniband::{ibv_wc, ibv_wc_flags, ibv_wc_opcode, ibv_wc_status};
+use modular_bitfield_msb::{bitfield, prelude::{B12, B4, B7}, specifiers::{B2, B24, B3, B40, B48, B5, B6}};
+use strum_macros::FromRepr;
 use volatile::WriteOnly;
 use zerocopy::{FromBytes, U32};
+
+use crate::queue_pair::{QueuePair, QueuePairOpcode};
 
 use super::{
     cmd::{CommandInterface, Opcode},
@@ -22,7 +26,7 @@ use super::{
 #[derive(Debug)]
 pub(super) struct CompletionQueue {
     number: u32,
-    num_entries: usize,
+    num_entries: u32,
     num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
     uar_idx: usize,
@@ -41,16 +45,17 @@ impl CompletionQueue {
     pub(super) fn new(
         cmd: &mut CommandInterface, caps: &Capabilities, offsets: &mut Offsets,
         memory_regions: &mut MrTable, eq: Option<&EventQueue>,
-        num_entries: usize,
+        num_entries: u32,
     ) -> Result<Self, &'static str> {
-        // CQE size is 32. There is 64 B support also available in CX3.
-        const CQE_SIZE: usize = 32;
         let number: u32 = offsets.alloc_cqn().try_into().unwrap();
         let uar_idx = offsets.alloc_scq_db();
-        let num_pages = (num_entries * CQE_SIZE).next_multiple_of(PAGE_SIZE) / PAGE_SIZE;
-        let memory = create_contiguous_mapping(
-            num_pages * PAGE_SIZE + CQE_SIZE - 1, DMA_FLAGS,
-        )?;
+        let num_pages = (
+            usize::try_from(num_entries).unwrap() * size_of::<CompletionQueueEntry>()
+        ).next_multiple_of(PAGE_SIZE) / PAGE_SIZE;
+        let size = num_pages * PAGE_SIZE + size_of::<CompletionQueueEntry>() - 1;
+        let mut memory = create_contiguous_mapping(size, DMA_FLAGS)?;
+        let bytes: &mut [u8] = memory.0.as_slice_mut(0, size)?;
+        bytes.fill(0);
         let mtt = memory_regions.alloc_mtt(cmd, caps, num_pages, memory.1)?;
         let (mut doorbell_page, doorbell_address) = create_contiguous_mapping(
             size_of::<CompletionQueueDoorbell>(), DMA_FLAGS
@@ -59,7 +64,7 @@ impl CompletionQueue {
             .as_type_mut(0)?;
         doorbell.update_consumer_index.write(0.into());
         doorbell.arm_consumer_index.write(0.into());
-        let arm_sequence_number = 0;
+        let arm_sequence_number = 1;
         let consumer_index = 0;
 
         let mut ctx = CompletionQueueContext::new();
@@ -123,6 +128,186 @@ impl CompletionQueue {
         Ok(())
     }
 
+    /// Poll this completion queue and return the number of new completions.
+    /// 
+    /// This is used by ibv_poll_cq.
+    pub(super) fn poll(
+        &mut self, qps: &mut [QueuePair], wc: &mut [ibv_wc],
+    ) -> Result<usize, &'static str> {
+        let mut completions = 0;
+        // poll one for as long as there are elements
+        while completions < wc.len() {
+            if self.poll_one(qps, &mut wc[completions])? {
+                completions += 1;
+            } else {
+                break;
+            }
+        }
+        let doorbell_record: &mut CompletionQueueDoorbell = self.doorbell_page
+            .as_type_mut(0)?;
+        doorbell_record.update_consumer_index.write(
+            (self.consumer_index & 0xffffff).into()
+        );
+        Ok(completions)
+    }
+
+    /// Poll this completion queue for one work completion.
+    /// 
+    /// Return true if there are more.
+    fn poll_one(
+        &mut self, qps: &mut [QueuePair], wc: &mut ibv_wc,
+    ) -> Result<bool, &'static str> {
+        const CQE_OPCODE_ERROR: u8 = 0x1e;
+        const CQE_OPCODE_RESIZE: u8 = 0x16;
+        // clear the wc first
+        *wc = ibv_wc::default();
+        if let Some(cqe) = self.get_next_cqe_sw()? {
+            self.consumer_index += 1;
+            trace!("got cqe: {:?}", cqe);
+            // TODO: Make sure we read CQ entry contents after we've checked the
+            // ownership bit.
+            let qp = qps.iter_mut()
+                .find(|qp| qp.number() == cqe.qp_number())
+                .ok_or("invalid queue pair number")?;
+            wc.qp_num = cqe.qp_number();
+            if cqe.is_send() {
+                qp.advance_send_queue();
+            } else {
+                qp.advance_receive_queue();
+            }
+            if cqe.opcode() == CQE_OPCODE_ERROR {
+                let checksum_bytes = cqe.checksum().to_ne_bytes();
+                let vendor_err_syndrome = checksum_bytes[0];
+                let syndrome = Syndrome::from_repr(checksum_bytes[1])
+                    .ok_or("invalid error syndrome")?;
+                error!(
+                    "work completion error: (QPN {}, WQE index {}, vendor syndrome {}, syndrome {:?}, opcode {})",
+                    cqe.qp_number(), cqe.wqe_index(), vendor_err_syndrome,
+                    syndrome, cqe.opcode(),
+                );
+                wc.status = match syndrome {
+                    Syndrome::LocalLengthError => ibv_wc_status::IBV_WC_LOC_LEN_ERR,
+                    Syndrome::LocalQpOperationError => ibv_wc_status::IBV_WC_LOC_QP_OP_ERR,
+                    Syndrome::LocalProtError => ibv_wc_status::IBV_WC_LOC_PROT_ERR,
+                    Syndrome::WrFlushError => ibv_wc_status::IBV_WC_WR_FLUSH_ERR,
+                    Syndrome::MwBindError => ibv_wc_status::IBV_WC_MW_BIND_ERR,
+                    Syndrome::BadResponseError => ibv_wc_status::IBV_WC_BAD_RESP_ERR,
+                    Syndrome::LocalAccessError => ibv_wc_status::IBV_WC_LOC_ACCESS_ERR,
+                    Syndrome::RemoteInvalidRequestError => ibv_wc_status::IBV_WC_REM_INV_REQ_ERR,
+                    Syndrome::RemoteAccessError => ibv_wc_status::IBV_WC_REM_ACCESS_ERR,
+                    Syndrome::RemoteOperationError => ibv_wc_status::IBV_WC_REM_OP_ERR,
+                    Syndrome::TransportRetryExceededError => ibv_wc_status::IBV_WC_RETRY_EXC_ERR,
+                    Syndrome::RnrRetryExceededErroor => ibv_wc_status::Type::IBV_WC_RNR_RETRY_EXC_ERR,
+                    Syndrome::RemoteAbortedErr => ibv_wc_status::IBV_WC_REM_ABORT_ERR,
+                    _ => ibv_wc_status::Type::IBV_WC_GENERAL_ERR,
+                };
+                wc.vendor_err = vendor_err_syndrome.into();
+                return Ok(true);
+            }
+            wc.status = ibv_wc_status::IBV_WC_SUCCESS;
+            wc.wc_flags = ibv_wc_flags::empty();
+            if cqe.is_send() {
+                let opcode = QueuePairOpcode::from_repr(cqe.opcode().into())
+                    .ok_or("invalid opcode")?;
+                match opcode {
+                    QueuePairOpcode::RdmaWrite => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RDMA_WRITE;
+                    },
+                    QueuePairOpcode::RdmaWriteImm => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RDMA_WRITE;
+                        wc.wc_flags.insert(ibv_wc_flags::IBV_WC_WITH_IMM);
+                    },
+                    QueuePairOpcode::Send => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_SEND;
+                    },
+                    QueuePairOpcode::SendImm => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_SEND;
+                        wc.wc_flags.insert(ibv_wc_flags::IBV_WC_WITH_IMM);
+                    },
+                    QueuePairOpcode::SendInval => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_SEND;
+                    },
+                    QueuePairOpcode::RdmaRead => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RDMA_READ;
+                        wc.byte_len = cqe.byte_cnt();
+                    },
+                    QueuePairOpcode::AtomicCs | QueuePairOpcode::MaskedAtomicCs => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_COMP_SWAP;
+                        wc.byte_len = 8;
+                    },
+                    QueuePairOpcode::AtomicFa | QueuePairOpcode::MaskedAtomicFa => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_FETCH_ADD;
+                        wc.byte_len = 8;
+                    },
+                    QueuePairOpcode::LocalInval => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_LOCAL_INV;
+                    },
+                    _ => {},
+                }
+            } else {
+                let opcode = ReceiveOpcode::from_repr(cqe.opcode().into())
+                    .ok_or("invalid opcode")?;
+                wc.byte_len = cqe.byte_cnt();
+                match opcode {
+                    ReceiveOpcode::RdmaWriteImm => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RECV_RDMA_WITH_IMM;
+                        wc.wc_flags.insert(ibv_wc_flags::IBV_WC_WITH_IMM);
+                        wc.imm_data = cqe.immed_rss_invalid();
+                    },
+                    ReceiveOpcode::SendInval => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RECV;
+                        wc.wc_flags.insert(ibv_wc_flags::IBV_WC_WITH_INV);
+                        todo!("set invalidate_rkey");
+                    },
+                    ReceiveOpcode::Send => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RECV;
+                    },
+                    ReceiveOpcode::SendImm => {
+                        wc.opcode = ibv_wc_opcode::IBV_WC_RECV;
+                        wc.wc_flags.insert(ibv_wc_flags::IBV_WC_WITH_IMM);
+                        wc.imm_data = cqe.immed_rss_invalid();
+                    },
+                }
+                wc.src_qp = cqe.rqpn();
+                wc.dlid_path_bits = cqe.mlpath();
+                if cqe.g() {
+                    wc.wc_flags.insert(ibv_wc_flags::IBV_WC_GRH);
+                }
+                wc.pkey_index = (cqe.immed_rss_invalid() & 0x7f)
+                    .try_into().unwrap();
+                wc.slid = cqe.slid();
+                wc.sl = cqe.sl();
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get the next element.
+    fn get_next_cqe_sw(&mut self) -> Result<Option<CompletionQueueEntry>, &'static str> {
+        const CQE_OWNER_MASK: u8 = 0x80;
+        let index = self.consumer_index;
+        // get the cqe
+        let cqe_bytes: &[u8] = self.memory.as_mut().unwrap().0.as_slice(
+            (
+                // wrap around
+                usize::try_from(index & (self.num_entries - 1)).unwrap()
+            ) * size_of::<CompletionQueueEntry>(),
+            size_of::<CompletionQueueEntry>(),
+        )?;
+        let cqe = CompletionQueueEntry::from_bytes(
+            cqe_bytes.try_into().unwrap()
+        );
+        // check if it's valid
+        // the ownership bit is flipping every round
+        if cqe.owner() ^ ((index & self.num_entries) != 0) {
+            Ok(None)
+        } else {
+            Ok(Some(cqe))
+        }
+    }
+
     /// Get the number of this completion queue.
     pub(super) fn number(&self) -> u32 {
         self.number
@@ -172,4 +357,56 @@ struct CompletionQueueContext {
 struct CompletionQueueDoorbell {
     update_consumer_index: WriteOnly<U32<BigEndian>>,
     arm_consumer_index: WriteOnly<U32<BigEndian>>,
+}
+
+// CQE size is 32. There is 64 B support also available in CX3.
+#[bitfield(bytes = 32)]
+#[derive(Debug)]
+struct CompletionQueueEntry {
+    #[skip] __: u8,
+    qp_number: B24,
+    immed_rss_invalid: u32,
+    g: bool,
+    mlpath: B7,
+    rqpn: B24,
+    sl: B4,
+    vid: B12,
+    slid: u16,
+    #[skip] __: u32,
+    byte_cnt: u32,
+    wqe_index: u16,
+    /// vendor_err_syndrome (u8) and syndrome (u8) on error
+    checksum: u16,
+    #[skip] __: B24,
+    owner: bool,
+    is_send: bool,
+    #[skip] __: bool,
+    opcode: B5,
+}
+
+#[repr(u8)]
+#[derive(Debug, FromRepr)]
+enum Syndrome {
+    LocalLengthError = 0x01,
+    LocalQpOperationError = 0x02,
+    LocalProtError = 0x04,
+    WrFlushError = 0x05,
+    MwBindError = 0x06,
+    BadResponseError = 0x10,
+    LocalAccessError = 0x11,
+    RemoteInvalidRequestError = 0x12,
+    RemoteAccessError = 0x13,
+    RemoteOperationError = 0x14,
+    TransportRetryExceededError = 0x15,
+    RnrRetryExceededErroor = 0x16,
+    RemoteAbortedErr = 0x22,
+}
+
+#[repr(u32)]
+#[derive(FromRepr)]
+enum ReceiveOpcode {
+    RdmaWriteImm = 0x0,
+    Send = 0x1,
+    SendImm = 0x2,
+    SendInval = 0x3,
 }

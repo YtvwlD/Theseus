@@ -9,6 +9,7 @@ use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
 use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type, ibv_recv_wr, ibv_send_wr, ibv_send_wr_wr, ibv_sge, ibv_wr_opcode};
 use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B53, B56, B6, B7}};
+use strum_macros::FromRepr;
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
@@ -679,6 +680,20 @@ impl QueuePair {
         Ok(())
     }
 
+    /// Advance the tail of the receive queue.
+    /// 
+    /// This is called on work completion.
+    pub(super) fn advance_receive_queue(&mut self) {
+        self.rq.tail += 1;
+    }
+
+    /// Advance the tail of the send queue.
+    /// 
+    /// This is called on work completion.
+    pub(super) fn advance_send_queue(&mut self) {
+        self.sq.tail += 1;
+    }
+
     /// Destroy this queue pair.
     pub(super) fn destroy(
         mut self, cmd: &mut CommandInterface, caps: &Capabilities,
@@ -699,6 +714,7 @@ impl QueuePair {
     pub(super) fn number(&self) -> u32 {
         self.number
     }
+    
 }
 
 impl Drop for QueuePair {
@@ -1158,7 +1174,8 @@ bitflags! {
 }
 
 #[repr(u32)]
-enum QueuePairOpcode { 
+#[derive(FromRepr)]
+pub(super) enum QueuePairOpcode { 
     Nop = 0x00, 
     SendInval = 0x01, 
     RdmaWrite = 0x08, 

@@ -26,7 +26,7 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type, ibv_recv_wr, ibv_send_wr};
+use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type, ibv_recv_wr, ibv_send_wr, ibv_wc};
 use pci::PciDevice;
 use port::Port;
 use queue_pair::QueuePair;
@@ -187,6 +187,18 @@ impl ConnectX3Nic {
         let number = cq.number();
         self.cqs.push(cq);
         Ok(number)
+    }
+
+    /// Poll a completion queue and return the number of new completions.
+    /// 
+    /// This is used by ibv_poll_cq.
+    pub fn poll_cq(
+        &mut self, number: u32, wc: &mut [ibv_wc],
+    ) -> Result<usize, &'static str> {
+        let cq = self.cqs.iter_mut()
+            .find(|cq| cq.number() == number)
+            .ok_or("invalid completion queue number")?;
+        cq.poll(&mut self.qps, wc)
     }
 
     /// Destroy a completion queue.

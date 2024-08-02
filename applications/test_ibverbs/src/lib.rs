@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
+use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
 
 const RDMA_WRITE_TEST_PACKET_SIZE: usize = 1 << 20;
 const RDMA_REGION_SIZE: usize = RDMA_WRITE_TEST_PACKET_SIZE * 2;
@@ -41,11 +41,23 @@ impl ConnectionInformation {
         // put our information in the second slot
         mr[1] = *self;
         let mut send_count = 0;
+        let mut completions = [ibv_wc::default()];
         loop {
             unsafe { qp.post_send(mr, 1..2, 0) }
                 .expect("failed to send connection information");
             send_count += 1;
-            todo!()
+            let completion = cq.poll(&mut completions)
+                .expect("failed to poll for completions").get(0);
+            if let Some(c) = completion {
+                if !c.is_valid() {
+                    println!("work completion failed: {:?}", c.error());
+                    if c.opcode() == ibv_wc_opcode::IBV_WC_RECV {
+                        panic!("failed to receive");
+                    }
+                } else if c.opcode() == ibv_wc_opcode::IBV_WC_RECV {
+                    break;
+                }
+            }
         }
         println!("Received connection information; {:?}", mr[0]);
         println!("Sender received connection information after sending {send_count} times.");
@@ -66,7 +78,35 @@ impl ConnectionInformation {
             0,
         ) }
             .expect("failed to request remote rdma information");
-        todo!()
+        let mut completions = [ibv_wc::default()];
+        loop {
+            let completion = cq.poll(&mut completions)
+                .expect("failed to poll for completions").get(0);
+            if let Some(c) = completion {
+                if !c.is_valid() {
+                    panic!("work completion failed: {:?}", c.error());
+                }
+                break;
+            }
+        }
+        println!("Received connection info: {:?}", mr[0]);
+        // respond with own connection data
+        // put our information in the second slot
+        mr[1] = *self;
+        unsafe { qp.post_send(mr, 1..2, 0) }
+            .expect("failed to send own connection info");
+        loop {
+            let completion = cq.poll(&mut completions)
+                .expect("failed to poll for completions").get(0);
+            if let Some(c) = completion {
+                if !c.is_valid() {
+                    panic!("work completion failed: {:?}", c.error());
+                }
+                break;
+            }
+        }
+        println!("Answered connection info with {self:?}");
+        mr[0]
     }
 }
 

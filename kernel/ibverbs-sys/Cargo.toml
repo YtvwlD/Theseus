@@ -7,7 +7,6 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "2.4.1"
 core2 = { path = "../../libs/core2", default-features = false }
 mlx3 = { path = "../mlx3" }
 mlx_infiniband = { path = "../mlx_infiniband" }

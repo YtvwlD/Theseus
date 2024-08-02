@@ -8,7 +8,7 @@ use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
-use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B56, B6, B7, B72}};
+use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B53, B56, B6, B7}};
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32};
 
@@ -382,6 +382,97 @@ impl QueuePair {
                 Opcode::Init2InitQp
             },
 
+            // rtr -> rts
+            (ibv_qp_state::IBV_QPS_RTR, true, ibv_qp_state::IBV_QPS_RTS) => {
+                // set required fields
+                // TODO: ack_req_freq, sra_max, next_send_psn, retry_count
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC {
+                    assert!(attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_RNR_RETRY
+                    ));
+                    context.set_rnr_retry(attr.rnr_retry);
+                    assert!(attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_TIMEOUT
+                    ));
+                    let mut primary_path = context.primary_path_one();
+                    primary_path.set_ack_timeout(attr.timeout);
+                    context.set_primary_path_one(primary_path);
+                }
+                // set optional fields
+                // TODO: rate_limit_index
+                // TODO: if an alternate path was loaded, we should set
+                // path migration state to REARM
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC {
+                    if attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_MIN_RNR_TIMER
+                    ) {
+                        // TODO: check encoding
+                        context.set_min_rnr_nak(attr.min_rnr_timer);
+                        param_mask.insert(OptionalParameterMask::MIN_RNR_NAK);
+                    }
+                }
+                if self.qp_type == ibv_qp_type::IBV_QPT_UD {
+                    if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_QKEY) {
+                        context.set_qkey(attr.qkey);
+                        param_mask.insert(OptionalParameterMask::QKEY);
+                    }
+                }
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
+                    let mut primary_path = context.primary_path_one();
+                    primary_path.set_pkey_index(
+                        attr.pkey_index.try_into().unwrap()
+                    );
+                    context.set_primary_path_one(primary_path);
+                    param_mask.insert(OptionalParameterMask::PKEY_INDEX);
+                }
+                if self.qp_type == ibv_qp_type::IBV_QPT_RC
+                 || self.qp_type == ibv_qp_type::IBV_QPT_UC {
+                    if attr_mask.contains(
+                        ibv_qp_attr_mask::IBV_QP_ACCESS_FLAGS
+                    ) {
+                        context.set_remote_write(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_WRITE
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_WRITE);
+                        context.set_remote_atomic(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_ATOMIC
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_ATOMIC);
+                        context.set_remote_read(
+                            attr.qp_access_flags.contains(
+                                ibv_access_flags::IBV_ACCESS_REMOTE_READ
+                            )
+                        );
+                        param_mask.insert(OptionalParameterMask::REMOTE_READ);
+                    }
+                }
+                Opcode::Rtr2RtsQp
+            },
+            // interestingly, there's no Rtr2RtrQp
+            // but we could emulate it by calling UpdateQp
+
+            // we can modify values in rts
+            (ibv_qp_state::IBV_QPS_RTS, true, ibv_qp_state::IBV_QPS_RTS)
+             | (ibv_qp_state::IBV_QPS_RTS, false, _) => {
+                todo!()
+            }
+
+            // ignore SQD for now
+            (ibv_qp_state::IBV_QPS_RTS, true, ibv_qp_state::IBV_QPS_SQD) => {
+                unimplemented!()
+            },
+            (ibv_qp_state::IBV_QPS_SQD, true, ibv_qp_state::IBV_QPS_RTS) => {
+                unimplemented!()
+            },
+            (ibv_qp_state::IBV_QPS_SQD, true, ibv_qp_state::IBV_QPS_SQD)
+             | (ibv_qp_state::IBV_QPS_SQD, false, _) => {
+                unimplemented!()
+            },
+
             // resetting is always possible
             (_, true, ibv_qp_state::IBV_QPS_RESET) => Opcode::Any2RstQp,
             // nothing else is possible
@@ -654,7 +745,9 @@ struct QueuePairContext {
     alternate_path_one: QueuePairPathPartOne,
     alternate_rgid: u128,
     alternate_path_two: QueuePairPathPartTwo,
-    #[skip] __: B72,
+    #[skip] __: u16,
+    rnr_retry: B3,
+    #[skip] __: B53,
     next_send_psn: B24,
     #[skip] __: u8,
     cqn_send: B24,

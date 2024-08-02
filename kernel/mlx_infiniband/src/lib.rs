@@ -174,4 +174,5 @@ pub enum ibv_qp_state {
     IBV_QPS_INIT,
     IBV_QPS_RTR,
     IBV_QPS_RTS,
+    IBV_QPS_SQD,
 }

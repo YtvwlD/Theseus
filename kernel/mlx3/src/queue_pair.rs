@@ -6,19 +6,20 @@ use core::mem::size_of;
 
 use bitflags::bitflags;
 use byteorder::BigEndian;
-use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
-use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type};
+use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
+use mlx_infiniband::{ibv_access_flags, ibv_mtu, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type, ibv_recv_wr};
 use modular_bitfield_msb::{bitfield, prelude::{B12, B16, B17, B19, B2, B20, B24, B3, B4, B40, B48, B5, B53, B56, B6, B7}};
 use volatile::WriteOnly;
-use zerocopy::{AsBytes, FromBytes, U16, U32};
+use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, icm::ICM_PAGE_SHIFT, port::Port};
+use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, icm::{translate_to_physical, ICM_PAGE_SHIFT}, port::Port};
 
 use super::{cmd::CommandInterface, fw::Capabilities, icm::MrTable, Offsets};
 
 const IB_SQ_MIN_WQE_SHIFT: u32 = 6;
 const IB_MAX_HEADROOM: u32 = 2048;
 const IB_SQ_MAX_SPARE: u32 = ib_sq_headroom(IB_SQ_MIN_WQE_SHIFT);
+const INVALID_LKEY: u32 = 0x100;
 
 const fn ib_sq_headroom(shift: u32) -> u32 {
     (IB_MAX_HEADROOM >> shift) + 1
@@ -214,7 +215,7 @@ impl QueuePair {
                 // is stamped so that the hardware doesn't start processing
                 // stale work requests.
                 for i in 0..self.sq.wqe_cnt {
-                    let ctrl = self.sq.get_element(
+                    let ctrl: &mut WqeControlSegment = self.sq.get_element(
                         self.memory.as_mut().unwrap(), i,
                     )?;
                     ctrl.owner_opcode = (1 << 31).into();
@@ -493,6 +494,68 @@ impl QueuePair {
         Ok(())
     }
 
+    /// Post a work request to receive data.
+    /// 
+    /// This is used by ibv_post_recv.
+    pub(super) fn post_receive(
+        &mut self, wr: &mut ibv_recv_wr
+    ) -> Result<(), &'static str> {
+        if self.state != ibv_qp_state::IBV_QPS_RTR
+         && self.state != ibv_qp_state::IBV_QPS_RTS {
+            return Err("queue pair cannot receive in this state");
+        }
+        // wrap around
+        let mut index = self.rq.head & (self.rq.wqe_cnt - 1);
+        let mut current = Some(wr);
+        let mut num_req = 0;
+        while current.is_some() {
+            let curr = current.take().unwrap();
+            // make sure that we're not overflowing
+            if self.rq.would_overflow(num_req) {
+                return Err("receive queue would overflow");
+            }
+            // check that this work request is not too big
+            if u32::try_from(curr.num_sge).unwrap() > self.rq.max_gs {
+                return Err("work request has too many sges");
+            }
+            let mut sge_index = 0;
+            for sge in &curr.sg_list {
+                let elem: &mut WqeDataSegment = self.rq.get_element(
+                    self.memory.as_mut().unwrap(), index + sge_index,
+                )?;
+                elem.byte_count = sge.length.into();
+                elem.lkey = sge.lkey.into();
+                elem.addr = (translate_to_physical(VirtualAddress::new(
+                    sge.addr.try_into().unwrap()
+                ).ok_or("sge has invalid address")?)?.value() as u64).into();
+                sge_index += 1;
+            }
+            // fill the last one
+            let last_elem: &mut WqeDataSegment = self.rq.get_element(
+                    self.memory.as_mut().unwrap(), index + sge_index,
+            )?;
+            last_elem.byte_count = 0.into();
+            last_elem.lkey = INVALID_LKEY.into();
+            last_elem.addr = 0.into();
+            num_req += 1;
+            index = (index + 1) & (self.rq.wqe_cnt - 1);
+            // TODO: support multiple work requests
+            assert!(curr.next.is_none());
+        }
+        // return if we don't have anything to do
+        if num_req == 0 {
+            return Ok(());
+        }
+        self.rq.head += num_req;
+        // TODO: make sure that the descriptors are written before the doorbell
+        let doorbell: &mut QueuePairDoorbell = self.doorbell_page
+            .as_type_mut(0)?;
+        doorbell.receive_wqe_index.write(
+            u16::try_from(self.rq.head).unwrap().into()
+        );
+        Ok(())
+    }
+
     /// Destroy this queue pair.
     pub(super) fn destroy(
         mut self, cmd: &mut CommandInterface, caps: &Capabilities,
@@ -537,6 +600,8 @@ struct WorkQueue {
     offset: u32,
     wqe_shift: u32,
     spare_wqes: Option<u32>,
+    head: u32,
+    tail: u32,
 }
 
 impl WorkQueue {
@@ -576,7 +641,7 @@ impl WorkQueue {
         ].iter().min().unwrap();
         Ok(Self {
             wqe_cnt, max_post, max_gs, offset: 0, wqe_shift,
-            spare_wqes: None,
+            spare_wqes: None, head: 0, tail: 0,
         })
     }
     
@@ -614,7 +679,7 @@ impl WorkQueue {
         ].iter().min().unwrap();
         Ok(Self {
             wqe_cnt, max_post, max_gs, offset: 0, wqe_shift,
-            spare_wqes: Some(spare_wqes),
+            spare_wqes: Some(spare_wqes), head: 0, tail: 0,
         })
     }
     
@@ -624,11 +689,19 @@ impl WorkQueue {
     }
     
     /// Get an element of this work queue.
-    fn get_element<'e>(
+    fn get_element<'e, T: FromBytes>(
         &self, memory: &'e mut (MappedPages, PhysicalAddress), index: u32,
-    ) -> Result<&'e mut WqeControlSegment, &'static str> {
+    ) -> Result<&'e mut T, &'static str> {
         let (pages, _addresss) = memory;
-        pages.as_type_mut((self.offset + (index << self.wqe_shift)).try_into().unwrap())
+        pages.as_type_mut(
+            (self.offset + (index << self.wqe_shift)).try_into().unwrap()
+        )
+    }
+    
+    /// Check if this queue would overflow when adding `num_req` work requests.
+    fn would_overflow(&self, num_req: u32) -> bool {
+        let cur = self.head - self.tail;
+        cur + num_req >= self.max_post
     }
 }
 
@@ -687,11 +760,12 @@ impl WqeControlSegment {
     }
 }
 
+#[derive(FromBytes)]
 #[repr(C)]
 struct WqeDataSegment {
-    byte_count: u32,
-    lkey: u32,
-    addr: u64,
+    byte_count: U32<BigEndian>,
+    lkey: U32<BigEndian>,
+    addr: U64<BigEndian>,
 }
 
 const ETH_ALEN: usize = 6;

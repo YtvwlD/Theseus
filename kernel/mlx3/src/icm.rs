@@ -297,16 +297,9 @@ impl MrTable {
         access: ibv_access_flags,
     ) -> Result<(u32, u32, u32), &'static str> {
         let size = data.len() * size_of::<T>();
-        // translate the address to a physical one
-        let address = get_kernel_mmi_ref()
-            .ok_or("failed to get memory mapping")?
-            .lock()
-            .page_table
-            .translate(
-                VirtualAddress::new(data.as_ptr() as usize)
-                    .ok_or("slice has invalid address")?
-            )
-            .ok_or("couldn't get physical address for slice")?;
+        let address = translate_to_physical(VirtualAddress::new(
+            data.as_ptr() as usize
+        ).ok_or("slice has invalid address")?)?;
         let mut num_pages = size / PAGE_SIZE;
         if num_pages == 0 {
             num_pages = 1;
@@ -386,6 +379,18 @@ impl MrTable {
         let dmpt = self.regions.remove(idx);
         dmpt.destroy(cmd)
     }
+}
+
+/// Translate this virtual address to a physical one.
+pub(super) fn translate_to_physical(
+    addr: VirtualAddress
+) -> Result<PhysicalAddress, &'static str> {
+    get_kernel_mmi_ref()
+        .ok_or("failed to get memory mapping")?
+        .lock()
+        .page_table
+        .translate(addr)
+        .ok_or("couldn't get physical address for slice")
 }
 
 /// the struct passed to WriteMtt

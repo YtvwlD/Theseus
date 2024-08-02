@@ -14,6 +14,7 @@ pub use mlx_infiniband::{
     __be64, ibv_access_flags, ibv_ah_attr, ibv_device_attr, ibv_gid, ibv_mtu,
     ibv_port_attr, ibv_port_state,
     ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type,
+    ibv_recv_wr, ibv_send_wr, ibv_send_flags, ibv_sge, ibv_wr_opcode,
 };
 use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
@@ -22,13 +23,15 @@ pub struct ibv_context_ops {
         &ibv_cq, &mut [ibv_wc],
     ) -> Result<i32>>,
     /// This is unsafe because the sges contain raw addresses.
+    // TODO: figure out a way to return the bad wr
     pub post_send: Option<unsafe fn(
         &mut ibv_qp, &mut ibv_send_wr,
-    ) -> Result<Vec<ibv_send_wr>>>,
+    ) -> Result<()>>,
     /// This is unsafe because the sges contain raw addresses.
+    // TODO: figure out a way to return the bad wr
     pub post_recv: Option<unsafe fn(
         &mut ibv_qp, &mut ibv_recv_wr,
-    ) -> Result<Vec<ibv_recv_wr>>>,
+    ) -> Result<()>>,
 }
 
 const IBV_CONTEXT_OPS: ibv_context_ops = ibv_context_ops {
@@ -90,11 +93,6 @@ pub struct ibv_pd<'ctx> {
     context: &'ctx ibv_context,
 }
 
-pub struct ibv_sge {
-    pub addr: u64,
-    pub length: u32,
-    pub lkey: u32,
-}
 pub struct ibv_srq {}
 
 pub struct ibv_qp<'ctx, 'cq> {
@@ -158,34 +156,6 @@ bitflags! {
         const IBV_WC_TM_MATCH = 32;
         const IBV_WC_TM_DATA_VALID = 64;
     }
-}
-
-pub struct ibv_send_wr {
-    pub wr_id: u64,
-    pub next: Option<()>,
-    pub sg_list: Vec<ibv_sge>,
-    pub num_sge: i32,
-    pub opcode: ibv_wr_opcode,
-    pub send_flags: ibv_send_flags,
-    pub __bindgen_anon_1: (),
-    pub wr: (),
-    pub qp_type: (),
-    pub __bindgen_anon_2: (),
-}
-
-pub struct ibv_recv_wr {
-    pub wr_id: u64,
-    pub next: Option<()>,
-    pub sg_list: Vec<ibv_sge>,
-    pub num_sge: i32,
-}
-
-pub enum ibv_wr_opcode {
-    IBV_WR_SEND,
-}
-
-pub enum ibv_send_flags {
-    IBV_SEND_SIGNALED,
 }
 
 /// Get list of IB devices currently available
@@ -330,15 +300,17 @@ fn ibv_poll_cq(
 /// post a list of work requests (WRs) to a send queue
 unsafe fn ibv_post_send(
     qp: &mut ibv_qp, wr: &mut ibv_send_wr,
-) -> Result<Vec<ibv_send_wr>> {
+) -> Result<()> {
     todo!()
 }
 
 /// post a list of work requests (WRs) to a receive queue
 unsafe fn ibv_post_recv(
     qp: &mut ibv_qp, wr: &mut ibv_recv_wr,
-) -> Result<Vec<ibv_recv_wr>> {
-    todo!()
+) -> Result<()> {
+    qp.recv_cq.context.lock()
+        .post_receive(qp.qp_num, wr)
+        .map_err(|s| Error::new(ErrorKind::Other, s))
 }
 
 // // // // // // // // // // // // // // // // // // // // // // // // // // // //

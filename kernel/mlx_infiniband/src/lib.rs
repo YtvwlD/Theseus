@@ -5,7 +5,7 @@
 
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use bitflags::bitflags;
 use strum_macros::FromRepr;
 
@@ -175,4 +175,38 @@ pub enum ibv_qp_state {
     IBV_QPS_RTR,
     IBV_QPS_RTS,
     IBV_QPS_SQD,
+}
+
+pub struct ibv_send_wr {
+    pub wr_id: u64,
+    pub next: Option<()>,
+    pub sg_list: Vec<ibv_sge>,
+    pub num_sge: i32,
+    pub opcode: ibv_wr_opcode,
+    pub send_flags: ibv_send_flags,
+    pub __bindgen_anon_1: (),
+    pub wr: (),
+    pub qp_type: (),
+    pub __bindgen_anon_2: (),
+}
+
+pub struct ibv_recv_wr {
+    pub wr_id: u64,
+    pub next: Option<()>,
+    pub sg_list: Vec<ibv_sge>,
+    pub num_sge: i32,
+}
+
+pub enum ibv_wr_opcode {
+    IBV_WR_SEND,
+}
+
+pub enum ibv_send_flags {
+    IBV_SEND_SIGNALED,
+}
+
+pub struct ibv_sge {
+    pub addr: u64,
+    pub length: u32,
+    pub lkey: u32,
 }

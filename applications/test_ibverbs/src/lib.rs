@@ -25,7 +25,31 @@ impl ConnectionInformation {
             num: remote_qpn, lid: remote_lid, gid: None,
         })
             .expect("handshake failed");
-        todo!()
+        println!("Sending connection info: {self:?}");
+        // Requesting remote connection information is posted once and will
+        // eventually be completed. Due to the unreliably connected nature of
+        // the QP, sending our own connection information has to be done
+        // periodically until it will eventually be acknowledged.
+        
+        // request remote rdma information
+        unsafe { qp.post_receive(
+            mr,
+            0..1,
+            0,
+        ) }
+            .expect("failed to request remote rdma information");
+        // put our information in the second slot
+        mr[1] = *self;
+        let mut send_count = 0;
+        loop {
+            unsafe { qp.post_send(mr, 1..2, 0) }
+                .expect("failed to send connection information");
+            send_count += 1;
+            todo!()
+        }
+        println!("Received connection information; {:?}", mr[0]);
+        println!("Sender received connection information after sending {send_count} times.");
+        mr[0]
     }
 
     fn recv(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16, remote_qpn: u32, mr: &mut MemoryRegion<Self>) -> Self {
@@ -35,6 +59,13 @@ impl ConnectionInformation {
             num: remote_qpn, lid: remote_lid, gid: None,
         })
             .expect("handshake failed");
+        // receive remote connection data
+        unsafe { qp.post_receive(
+            mr,
+            0..1,
+            0,
+        ) }
+            .expect("failed to request remote rdma information");
         todo!()
     }
 }

@@ -26,7 +26,7 @@ use event_queue::{init_eqs, EventQueue};
 use fw::{Capabilities, Hca, MappedFirmwareArea};
 use icm::MappedIcmTables;
 use memory::MappedPages;
-use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type};
+use mlx_infiniband::{ibv_access_flags, ibv_device_attr, ibv_port_attr, ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_type, ibv_recv_wr};
 use pci::PciDevice;
 use port::Port;
 use queue_pair::QueuePair;
@@ -257,6 +257,18 @@ impl ConnectX3Nic {
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
         qp.destroy(&mut cmd, self.capabilities.as_ref().unwrap())?;
         Ok(())
+    }
+
+    /// Post a work request to receive data.
+    /// 
+    /// This is used by ibv_post_recv.
+    pub fn post_receive(
+        &mut self, qp_number: u32, wr: &mut ibv_recv_wr
+    ) -> Result<(), &'static str> {
+        let qp = self.qps.iter_mut()
+            .find(|qp| qp.number() == qp_number)
+            .ok_or("invalid queue pair number")?;
+        qp.post_receive(wr)
     }
 
     /// Create a memory region and return its index, lkey and rkey.

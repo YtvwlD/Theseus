@@ -184,6 +184,7 @@ impl ConnectX3Nic {
             self.eqs.get(0), min_num_entries.try_into().unwrap(),
         )?;
         cq.arm(&mut self.doorbells)?;
+        cq.query(&mut cmd)?;
         let number = cq.number();
         self.cqs.push(cq);
         Ok(number)

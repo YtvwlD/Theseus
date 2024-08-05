@@ -128,6 +128,21 @@ impl CompletionQueue {
         Ok(())
     }
 
+    /// Query this completion queue for debugging purposes.
+    pub(super) fn query(
+        &mut self, cmd: &mut CommandInterface,
+    ) -> Result<(), &'static str> {
+        let bytes: MappedPages = cmd.execute_command(
+            Opcode::QueryCq, (), (), self.number,
+        )?;
+        let ctx = CompletionQueueContext::from_bytes(
+            bytes.as_slice(0, size_of::<CompletionQueueContext>())?
+                .try_into().unwrap()
+        );
+        trace!("current CQ state: {ctx:?}");
+        Ok(())
+    }
+
     /// Poll this completion queue and return the number of new completions.
     /// 
     /// This is used by ibv_poll_cq.
@@ -323,6 +338,7 @@ impl Drop for CompletionQueue {
 }
 
 #[bitfield]
+#[derive(Debug)]
 struct CompletionQueueContext {
     flags: u32,
     #[skip] __: B48,

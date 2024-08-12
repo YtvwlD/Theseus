@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use memory::{create_contiguous_mapping, get_kernel_mmi_ref, MappedPages, PhysicalAddress, VirtualAddress, DMA_FLAGS, PAGE_SIZE};
 use mlx_infiniband::ibv_access_flags;
 use modular_bitfield_msb::{bitfield, prelude::{B10, B11, B21, B24, B28, B3, B4, B40, B7}};
-use zerocopy::AsBytes;
+use zerocopy::{AsBytes, BigEndian, FromBytes, U64};
 
 use crate::{cmd::{CommandInterface, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile, queue_pair::QueuePair, Offsets};
 
@@ -264,7 +264,7 @@ impl MrTable {
         &mut self, cmd: &mut CommandInterface, caps: &Capabilities,
         num_entries: usize, data_address: PhysicalAddress,
     ) -> Result<u64, &'static str> {
-        let num_entries: u64 = num_entries.try_into().unwrap();
+        let mut num_entries: u64 = num_entries.try_into().unwrap();
         assert_ne!(num_entries, 0);
         // get the next free entry
         let addr = (
@@ -274,16 +274,28 @@ impl MrTable {
         
         // send it to the card
         const MTT_FLAG_PRESENT: u64 = 1;
-        // TODO: we can speed this up by passing page-sized chunks, see the Nautilus driver
-        for idx in 0..num_entries {
-            let mut write_cmd = WriteMttCommand::new();
-            write_cmd.set_offset((addr + idx) as u64);
-            write_cmd.set_entry((
-                data_address.value() as u64 + idx * PAGE_SIZE as u64
-            ) | MTT_FLAG_PRESENT);
+        // we could possibly also write single entries, but this is way slower
+        // and also doesn't work sometimes
+        let mut start_index = 0;
+        while num_entries > 0 {
+            let mut chunk: u64 = (PAGE_SIZE / size_of::<u64>() - 2)
+                .try_into().unwrap();
+            if num_entries < chunk {
+                chunk = num_entries;
+            }
+            let mut write_cmd = WriteMttCommand::new_zeroed();
+            write_cmd.offset.set(addr + start_index);
+            for i in 0..chunk {
+                write_cmd.entries[usize::try_from(i).unwrap()].set((
+                    data_address.value() as u64 + (i + start_index) * PAGE_SIZE as u64
+                ) | MTT_FLAG_PRESENT);
+            }
             cmd.execute_command(
-                Opcode::WriteMtt, (), &write_cmd.bytes[..], 1,
+                Opcode::WriteMtt, (), write_cmd.as_bytes(),
+                chunk.try_into().unwrap(),
             )?;
+            num_entries -= chunk;
+            start_index += chunk;
         }
         Ok(addr)
     }
@@ -394,14 +406,14 @@ pub(super) fn translate_to_physical(
 }
 
 /// the struct passed to WriteMtt
-#[bitfield]
+#[derive(AsBytes, FromBytes)]
+#[repr(C, packed)]
 struct WriteMttCommand {
-    offset: u64,
-    #[skip] __: u64,
-    // TODO: support multiple entries
+    offset: U64<BigEndian>,
+    _reserved: u64,
     /// the physical address, except for the last three bits
     /// (those must be zero); the last bit is the present bit
-    entry: u64,
+    entries: [U64<BigEndian>; 510],
 }
 
 /// This is a wrapper around DmptEntry, so that we can implement Drop.

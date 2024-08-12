@@ -501,6 +501,7 @@ impl QueuePair {
     pub(super) fn post_receive(
         &mut self, wr: &mut ibv_recv_wr
     ) -> Result<(), &'static str> {
+        trace!("Posting {wr:?}...");
         if self.state != ibv_qp_state::IBV_QPS_RTR
          && self.state != ibv_qp_state::IBV_QPS_RTS {
             return Err("queue pair cannot receive in this state");
@@ -558,6 +559,7 @@ impl QueuePair {
         &mut self, doorbells: &mut [MappedPages], wr: &mut ibv_send_wr,
         use_blue_flame: bool,
     ) -> Result<(), &'static str> {
+        trace!("Posting {wr:?}...");
         if self.state != ibv_qp_state::IBV_QPS_RTS {
             return Err("queue pair cannot send in this state");
         }

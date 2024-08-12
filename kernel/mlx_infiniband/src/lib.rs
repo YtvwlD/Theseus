@@ -177,6 +177,7 @@ pub enum ibv_qp_state {
     IBV_QPS_SQD,
 }
 
+#[derive(Debug)]
 pub struct ibv_send_wr {
     pub wr_id: u64,
     pub next: Option<()>,
@@ -190,6 +191,7 @@ pub struct ibv_send_wr {
     pub __bindgen_anon_2: (),
 }
 
+#[derive(Debug)]
 pub enum ibv_send_wr_wr {
     rdma {
         /// Start address of remote memory buffer
@@ -222,12 +224,14 @@ impl Default for ibv_send_wr_wr {
 }
 
 
+#[derive(Debug)]
 pub struct ibv_send_wr_wr_ah {
     pub port: u32,
     pub dlid: u16,
     pub slid: u8,
 }
 
+#[derive(Debug)]
 pub struct ibv_recv_wr {
     pub wr_id: u64,
     pub next: Option<()>,
@@ -235,17 +239,19 @@ pub struct ibv_recv_wr {
     pub num_sge: i32,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ibv_wr_opcode {
     IBV_WR_RDMA_WRITE,
     IBV_WR_SEND,
     IBV_WR_RDMA_READ,
 }
 
+#[derive(Debug)]
 pub enum ibv_send_flags {
     IBV_SEND_SIGNALED,
 }
 
+#[derive(Debug)]
 pub struct ibv_sge {
     pub addr: u64,
     pub length: u32,

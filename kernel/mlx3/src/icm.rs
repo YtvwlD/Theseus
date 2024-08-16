@@ -521,21 +521,30 @@ impl MappedIcm {
             align = PAGE_SIZE.ilog2();
         }
         let size = num_pages as usize * PAGE_SIZE;
-        let mut count = size / (1 << align);
+        let mut num_entries = size / (1 << align);
         if size % (1 << align) != 0 {
-            count += 1;
+            num_entries += 1;
         }
-        // TODO: we can batch as many vpm entries as fit in a mailbox (1 page)
-        // rather than 1 chunk per mailbox, this will make bootup faster
-        let mut vpm = VirtualPhysicalMapping::default();
+        // batch as many vpm entries as fit in a mailbox to make bootup faster
+        let mut vpms = [VirtualPhysicalMapping::default(); 256];
         let mut phys_pointer = physical;
         let mut virt_pointer = card_virtual;
-        for _ in 0..count {
-            vpm.physical_address.set(phys_pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            vpm.virtual_address.set(virt_pointer);
-            cmd.execute_command(Opcode::MapIcm, (), vpm.as_bytes(), 1)?;
-            phys_pointer += 1 << align;
-            virt_pointer += 1 << align;
+        while num_entries > 0 {
+            let mut chunk = PAGE_SIZE / size_of::<VirtualPhysicalMapping>();
+            if num_entries < chunk {
+                chunk = num_entries;
+            }
+            for i in 0..chunk {
+                vpms[i].physical_address.set(phys_pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
+                vpms[i].virtual_address.set(virt_pointer);
+
+                phys_pointer += 1 << align;
+                virt_pointer += 1 << align;
+            }
+            cmd.execute_command(
+                Opcode::MapIcm, (), vpms.as_bytes(), chunk.try_into().unwrap(),
+            )?;
+            num_entries -= chunk;
         }
         Ok(Self { memory: Some((pages, physical)), card_virtual, num_pages, })
     }

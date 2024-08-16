@@ -200,18 +200,27 @@ impl MappedFirmwareArea {
             align = PAGE_SIZE.ilog2();
         }
         let size = aux_pages * PAGE_SIZE as u64;
-        let mut count = size / (1 << align);
+        let mut num_entries = usize::try_from(size).unwrap() / (1 << align);
         if size % (1 << align) != 0 {
-            count += 1;
+            num_entries += 1;
         }
-        // TODO: we can batch as many vpm entries as fit in a mailbox (1 page)
-        // rather than 1 chunk per mailbox, this will make bootup faster
-        let mut vpm = VirtualPhysicalMapping::default();
+        // batch as many vpm entries as fit in a mailbox to make bootup faster
+        let mut vpms = [VirtualPhysicalMapping::default(); 256];
         let mut pointer = physical;
-        for _ in 0..count {
-            vpm.physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
-            cmd.execute_command(Opcode::MapIcmAux, (), vpm.as_bytes(), 1)?;
-            pointer += 1 << align;
+        while num_entries > 0 {
+            let mut chunk = PAGE_SIZE / size_of::<VirtualPhysicalMapping>();
+            if num_entries < chunk {
+                chunk = num_entries;
+            }
+            for i in 0..chunk {
+                vpms[i].physical_address.set(pointer.value() as u64 | (align as u64 - ICM_PAGE_SHIFT as u64));
+                pointer += 1 << align;
+            }
+            cmd.execute_command(
+                Opcode::MapIcmAux, (), vpms.as_bytes(),
+                chunk.try_into().unwrap(),
+            )?;
+            num_entries -= chunk;
         }
         trace!("mapped {} pages for ICM auxiliary area", aux_pages);
 

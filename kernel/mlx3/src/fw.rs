@@ -374,7 +374,7 @@ pub(super) struct Capabilities {
     uar_sz: B6,
     #[skip] __: u8,
     log_page_sz: u8,
-    bf: bool,
+    pub(super) bf: bool,
     #[skip] __: B10,
     log_bf_reg_sz: B5,
     #[skip] __: B2,
@@ -456,7 +456,7 @@ impl Capabilities {
         }
     }
 
-    fn bf_reg_size(&self) -> usize {
+    pub(super) fn bf_reg_size(&self) -> usize {
         if self.bf() {
             1 << self.log_bf_reg_sz()
         } else {

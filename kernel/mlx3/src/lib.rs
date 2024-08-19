@@ -294,7 +294,10 @@ impl ConnectX3Nic {
             .find(|qp| qp.number() == qp_number)
             .ok_or("invalid queue pair number")?;
         // TODO: check if blue flame is available
-        qp.post_send(&mut self.doorbells, wr, false)
+        qp.post_send(
+            self.capabilities.as_ref().unwrap(), &mut self.doorbells,
+            Some(&mut self.blueflame), wr,
+        )
     }
 
     /// Create a memory region and return its index, lkey and rkey.

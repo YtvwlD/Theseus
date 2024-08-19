@@ -557,8 +557,8 @@ impl QueuePair {
     /// 
     /// This is used by ibv_post_send.
     pub(super) fn post_send(
-        &mut self, doorbells: &mut [MappedPages], wr: &mut ibv_send_wr,
-        use_blue_flame: bool,
+        &mut self, caps: &Capabilities, doorbells: &mut [MappedPages],
+        blueflame: Option<&mut [MappedPages]>, wr: &mut ibv_send_wr,
     ) -> Result<(), &'static str> {
         trace!("Posting {wr:?}...");
         if self.state != ibv_qp_state::IBV_QPS_RTS {
@@ -672,8 +672,41 @@ impl QueuePair {
         if num_req == 0 {
             return Ok(());
         }
-        if use_blue_flame {
-            todo!()
+        if blueflame.is_some() && caps.bf() && num_req == 1 {
+            trace!("Using BlueFlame");
+            index -= 1;
+            let (size, ctrl_address) = {
+                let ctrl: &mut WqeControlSegment = self.sq.get_element(
+                    // wrap around
+                    memory, index & (self.sq.wqe_cnt - 1),
+                )?;
+                ctrl.owner_opcode.set(
+                    ctrl.owner_opcode.get() | ((self.sq.head & 0xffff) << 8)
+                );
+                ctrl.vlan_cv_f_ds.set(
+                    ctrl.vlan_cv_f_ds.get() | (self.number << 8)
+                );
+                let ctrl_address = VirtualAddress::new(
+                    ctrl as *mut WqeControlSegment as usize
+                ).ok_or("control segment has invalid address")?;
+                (ctrl.size().try_into().unwrap(), ctrl_address)
+            };
+            let ctrl_offset = memory.0.offset_of_address(ctrl_address)
+                .ok_or("control segment has invalid address")?;
+            // Make sure that descriptor is written to memory
+            // before writing to BlueFlame page.
+            compiler_fence(Ordering::SeqCst);
+            // the UAR determines which BlueFlame page we can use
+            // we just use the first register (0..bf_reg_size)
+            // each register consists of two buffers (bf_reg_size/2)
+            // which we have to alternate between
+            let bf_reg: &mut [u64] = blueflame.unwrap()[self.uar_idx].as_slice_mut(
+                (index as usize % 2) * (caps.bf_reg_size() / 2),
+                caps.bf_reg_size() / 16,
+            )?;
+            let src = memory.0.as_slice(ctrl_offset, size)?;
+            bf_reg[..size].copy_from_slice(src);
+            // TODO: will this work when mixing BF and normal sends?
         } else {
             // Make sure that descriptors are written before doorbell.
             compiler_fence(Ordering::SeqCst);
@@ -854,13 +887,10 @@ impl WorkQueue {
     ) -> Result<(), &'static str> {
         let (size, ctrl_address) = {
             let ctrl: &mut WqeControlSegment = self.get_element(memory, index)?;
-            let size = ((
-                ctrl.vlan_cv_f_ds.get() & 0x3f
-            ) << 4).try_into().unwrap();
             let ctrl_address = VirtualAddress::new(
                 ctrl as *mut WqeControlSegment as usize
             ).ok_or("control segment has invalid address")?;
-            (size, ctrl_address)
+            (ctrl.size().try_into().unwrap(), ctrl_address)
         };
         let ctrl_offset = memory.0.offset_of_address(ctrl_address)
             .ok_or("control segment has invalid address")?;
@@ -916,6 +946,12 @@ struct WqeControlSegment {
     vlan_cv_f_ds: U32<BigEndian>,
     flags: U32<BigEndian>,
     flags2: U32<BigEndian>,
+}
+
+impl WqeControlSegment {
+    fn size(&self) -> u32 {
+        (self.vlan_cv_f_ds.get() & 0x3f) << 4
+    }
 }
 
 bitflags! {

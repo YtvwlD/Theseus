@@ -2,7 +2,7 @@
 //! completion queues. Furthermore its functions can consume and print
 //! completion queue elements.
 
-use core::mem::size_of;
+use core::{mem::size_of, sync::atomic::{compiler_fence, Ordering}};
 
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
@@ -118,7 +118,9 @@ impl CompletionQueue {
         doorbell_record.arm_consumer_index.write(
             (sn << 28 | cmd << 24 | ci).into()
         );
-        // TODO: barrier
+        // Make sure that the doorbell record in host memory is
+        // written before ringing the doorbell via PCI MMIO.
+        compiler_fence(Ordering::SeqCst);
         let doorbell: &mut DoorbellPage = doorbells[self.uar_idx]
             .as_type_mut(0)?;
         doorbell.cq_sn_cmd_num.write(
@@ -179,8 +181,9 @@ impl CompletionQueue {
         if let Some(cqe) = self.get_next_cqe_sw()? {
             self.consumer_index += 1;
             trace!("got cqe: {:?}", cqe);
-            // TODO: Make sure we read CQ entry contents after we've checked the
+            // Make sure we read CQ entry contents after we've checked the
             // ownership bit.
+            compiler_fence(Ordering::SeqCst);
             let qp = qps.iter_mut()
                 .find(|qp| qp.number() == cqe.qp_number())
                 .ok_or("invalid queue pair number")?;

@@ -1,6 +1,8 @@
 //! This module consists of functions to create a direct memory access mailbox for passing parameters to the hca
 //! and getting output back from the hca during verb calls and functions to execute verb calls.
 
+use core::sync::atomic::{compiler_fence, Ordering};
+
 use bitflags::bitflags;
 use byteorder::BigEndian;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
@@ -320,7 +322,7 @@ impl<'a> CommandInterface<'a> {
         self.hcr.in_mod.write(input_modifier.into());
         self.hcr.out_param.write(output_param.into());
         self.hcr.token.write((POLL_TOKEN << 16).into());
-        // TODO: barrier?
+        compiler_fence(Ordering::SeqCst);
         self.hcr.status_opcode.write((
             (1 << HCR_GO_BIT)
             | (self.exp_toggle << HCR_T_BIT)

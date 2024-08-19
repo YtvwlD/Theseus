@@ -2,7 +2,7 @@
 //! pairs. Its functions can change the state of a QP and query and print some
 //! QP infos.
 
-use core::mem::size_of;
+use core::{mem::size_of, sync::atomic::{compiler_fence, Ordering}};
 
 use bitflags::bitflags;
 use byteorder::BigEndian;
@@ -525,7 +525,7 @@ impl QueuePair {
                 let elem: &mut WqeDataSegment = self.rq.get_element(
                     self.memory.as_mut().unwrap(), index + sge_index,
                 )?;
-                *elem = WqeDataSegment::from_sge(sge)?;
+                elem.copy_from_sge(sge)?;
                 sge_index += 1;
             }
             // fill the last one
@@ -543,7 +543,8 @@ impl QueuePair {
             return Ok(());
         }
         self.rq.head += num_req;
-        // TODO: make sure that the descriptors are written before the doorbell
+        // make sure that the descriptors are written before the doorbell
+        compiler_fence(Ordering::SeqCst);
         let doorbell: &mut QueuePairDoorbell = self.doorbell_page
             .as_type_mut(0)?;
         doorbell.receive_wqe_index.write(
@@ -626,20 +627,22 @@ impl QueuePair {
             for sge in curr.sg_list.iter().rev() {
                 let elem: &mut WqeDataSegment = memory.0
                     .as_type_mut(wqe_offset)?;
-                *elem = WqeDataSegment::from_sge(sge)?;
+                elem.copy_from_sge(sge)?;
                 wqe_offset -= size_of::<WqeDataSegment>();
                 wqe_size += size_of::<WqeDataSegment>();
             }
 
-            // TODO: Possibly overwrite stamping in cacheline with LSO segment
+            // Possibly overwrite stamping in cacheline with LSO segment
             // only after making sure all data segments are written.
+            compiler_fence(Ordering::SeqCst);
             let ctrl: &mut WqeControlSegment = self.sq.get_element(
                 // wrap around
                 memory, index & (self.sq.wqe_cnt - 1),
             )?;
             ctrl.vlan_cv_f_ds = u32::try_from(wqe_size / 16).unwrap().into();
-            // TODO: Make sure descriptor is fully written before setting
-            // ownership bit (because HW can start executing as soon as we do).
+            // Make sure descriptor is fully written before setting ownership
+            // bit (because HW can start executing as soon as we do).
+            compiler_fence(Ordering::SeqCst);
             // TODO: opcode check
             let opcode = match curr.opcode {
                 ibv_wr_opcode::IBV_WR_RDMA_WRITE => QueuePairOpcode::RdmaWrite,
@@ -672,7 +675,8 @@ impl QueuePair {
         if use_blue_flame {
             todo!()
         } else {
-            // TODO: Make sure that descriptors are written before doorbell.
+            // Make sure that descriptors are written before doorbell.
+            compiler_fence(Ordering::SeqCst);
             let doorbell: &mut DoorbellPage = doorbells[self.uar_idx]
                 .as_type_mut(0)?;
             doorbell.send_queue_number.write((self.number << 8).into());
@@ -940,21 +944,23 @@ struct WqeDataSegment {
 }
 
 impl WqeDataSegment {
-    /// Create a data segment from an sge.
-    fn from_sge(sge: &ibv_sge) -> Result<Self, &'static str> {
-        Ok(Self {
-            lkey: sge.lkey.into(),
-            addr: (translate_to_physical(VirtualAddress::new(
+    /// Copy information from an sge.
+    fn copy_from_sge(&mut self, sge: &ibv_sge) -> Result<(), &'static str> {
+        self.lkey.set(sge.lkey);
+        self.addr.set(
+            translate_to_physical(VirtualAddress::new(
                 sge.addr.try_into().unwrap()
-            ).ok_or("sge has invalid address")?)?.value() as u64).into(),
-            // TODO: sending needs a barrier here before writing the byte_count
-            // field to make sure that all the data is visible before the
-            // byte_count field is set. Otherwise, if the segment begins a new
-            // cacheline, the HCA prefetcher could grab the 64-byte chunk and
-            // get a valid (!= * 0xffffffff) byte count but stale data, and end
-            // up sending the wrong data.
-            byte_count: sge.length.into(),
-        })
+            ).ok_or("sge has invalid address")?)?.value() as u64
+        );
+        // sending needs a barrier here before writing the byte_count
+        // field to make sure that all the data is visible before the
+        // byte_count field is set. Otherwise, if the segment begins a new
+        // cacheline, the HCA prefetcher could grab the 64-byte chunk and
+        // get a valid (!= * 0xffffffff) byte count but stale data, and end
+        // up sending the wrong data.
+        compiler_fence(Ordering::SeqCst);
+        self.byte_count.set(sge.length);
+        Ok(())
     }
     
     /// Create a dummy element to be the last in the queue.

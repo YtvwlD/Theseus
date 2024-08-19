@@ -199,7 +199,7 @@ impl ConnectX3Nic {
         let cq = self.cqs.iter_mut()
             .find(|cq| cq.number() == number)
             .ok_or("invalid completion queue number")?;
-        cq.poll(&mut self.qps, wc)
+        cq.poll(&mut self.eqs, &mut self.qps, &mut self.doorbells, wc)
     }
 
     /// Destroy a completion queue.

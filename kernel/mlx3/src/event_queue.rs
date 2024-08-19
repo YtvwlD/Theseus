@@ -1,12 +1,13 @@
 //! This module consists of functions that create, work with and destroy event queues.
 //! Additionally it holds the interrupt handling function to consume EQEs.
 
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::{mem::size_of, sync::atomic::{compiler_fence, Ordering}};
 
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
 use modular_bitfield_msb::{bitfield, specifiers::{B10, B16, B2, B22, B24, B4, B40, B5, B6, B60, B7, B72, B96}};
+use strum_macros::FromRepr;
 
 use super::{
     cmd::{CommandInterface, Opcode},
@@ -15,6 +16,9 @@ use super::{
     icm::{MrTable, ICM_PAGE_SHIFT},
     Offsets,
 };
+
+const _NUM_ASYNC_EQE: u32 = 0x100;
+const NUM_SPARE_EQE: u32 = 0x80;
 
 /// Initialize the event queues.
 /// This creates all of the EQs ahead of time,
@@ -41,7 +45,7 @@ pub(super) fn init_eqs(
 #[derive(Debug)]
 pub(super) struct EventQueue {
     number: usize,
-    num_entries: usize,
+    num_entries: u32,
     num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
     mtt: u64,
@@ -67,9 +71,11 @@ impl EventQueue {
         const EQ_STATE_ARMED: u8 = 9;
         const EQ_STATE_FIRED: u8 = 0xa;
         let number = offsets.alloc_eqn();
-        let num_entries = 4096; // NUM_ASYNC_EQE + NUM_SPARE_EQE
+        let num_entries: u32 = 4096; // NUM_ASYNC_EQE + NUM_SPARE_EQE
         let consumer_index = 0;
-        let mut num_pages = (num_entries * EQE_SIZE).next_multiple_of(PAGE_SIZE) / PAGE_SIZE;
+        let mut num_pages = (
+            num_entries as usize * EQE_SIZE
+        ).next_multiple_of(PAGE_SIZE) / PAGE_SIZE;
         // not needed if 128 EQE entries
         if num_pages == 0 {
             num_pages = 1;
@@ -167,7 +173,77 @@ impl EventQueue {
         compiler_fence(Ordering::SeqCst);
         Ok(())
     }
+
+    /// Handle events.
+    /// 
+    /// This can be called manually (polling) or from an interrupt.
+    pub(super) fn handle_events(
+        &mut self, doorbells: &mut [MappedPages],
+    ) -> Result<(), &'static str> {
+        let mut set_ci: u32 = 0;
+        loop {
+            if self.poll_one()? {
+                set_ci += 1;
+                if set_ci >= NUM_SPARE_EQE {
+                   self.ring(doorbells, false)?;
+                   set_ci = 0;
+                }
+                continue
+            } else {
+                break
+            }
+        }
+        self.ring(doorbells, true)?;
+        Ok(())
+    }
+
+    /// Poll this event queue for one event.
+    /// 
+    /// Return true if there are more.
+    fn poll_one(&mut self) -> Result<bool, &'static str> {
+        if let Some(eqe) = self.get_next_eqe_sw()? {
+            self.consumer_index += 1;
+            trace!("got eqe: {:?}", eqe);
+            // Make sure we read CQ entry contents after we've checked the
+            // ownership bit.
+            compiler_fence(Ordering::SeqCst);
+            // TODO: perhaps do something here
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
     
+    /// Get the next entry.
+    fn get_next_eqe_sw(
+        &mut self
+    ) -> Result<Option<EventQueueEntry>, &'static str> {
+        let index = self.consumer_index;
+        // get the eqe
+        let eqe_bytes: &[u8] = self.memory.as_mut().unwrap().0.as_slice(
+            (
+                // wrap around
+                usize::try_from(index & (self.num_entries - 1)).unwrap()
+            ) * size_of::<EventQueueEntry>(),
+            // TODO: CX3 is capable of extending the EQE from 32 to 64 bytes
+            // with strides of 64B, 128B and 256B. When 64B EQE is used, the
+            // first (in the lower addresses) 32 bytes in the 64 byte EQE are
+            // reserved and the next 32 bytes contain the legacy EQE information.
+            // In all other cases, the first 32B contains the legacy EQE info.
+            size_of::<EventQueueEntry>(),
+        )?;
+        let eqe = EventQueueEntry::from_bytes(
+            eqe_bytes.try_into().unwrap()
+        );
+        // check if it's valid
+        // the ownership bit is flipping every round
+        if eqe.owner() ^ ((index & self.num_entries) != 0) {
+            Ok(None)
+        } else {
+            Ok(Some(eqe))
+        }
+    }
+
     /// Get the number of this event queue.
     pub(super) fn number(&self) -> usize {
         self.number
@@ -208,7 +284,31 @@ struct EventQueueContext {
     #[skip] __: B96,
 }
 
+#[bitfield(bytes = 32)]
+struct EventQueueEntry {
+    #[skip] __: u8,
+    event_type: u8,
+    #[skip] __: u8,
+    event_subtype: u8,
+    event_data1: B96,
+    event_data2: B96,
+    #[skip] __: B24,
+    owner: bool,
+    #[skip] __: B7,
+}
+
+impl core::fmt::Debug for EventQueueEntry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f
+            .debug_struct("EventQueueEntry")
+            .field("owner", &self.owner())
+            .field("type", &EventType::from_repr(self.event_type().into()))
+            .finish_non_exhaustive()
+    }
+}
+
 #[repr(u64)]
+#[derive(Debug, FromRepr)]
 enum EventType {
     // completion
     Completion = 0x00,

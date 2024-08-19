@@ -149,8 +149,16 @@ impl CompletionQueue {
     /// 
     /// This is used by ibv_poll_cq.
     pub(super) fn poll(
-        &mut self, qps: &mut [QueuePair], wc: &mut [ibv_wc],
+        &mut self, eqs: &mut [EventQueue], qps: &mut [QueuePair],
+        doorbells: &mut [MappedPages], wc: &mut [ibv_wc],
     ) -> Result<usize, &'static str> {
+        // try to poll the assiociated event queue first
+        if let Some(eq_number) = self.eq_number {
+            eqs.iter_mut()
+                .find(|eq| eq.number() == eq_number)
+                .ok_or("invalid event queue number")?
+                .handle_events(doorbells)?;
+        }
         let mut completions = 0;
         // poll one for as long as there are elements
         while completions < wc.len() {

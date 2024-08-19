@@ -1,6 +1,8 @@
 //! This module consists of functions that create, work with and destroy event queues.
 //! Additionally it holds the interrupt handling function to consume EQEs.
 
+use core::sync::atomic::{compiler_fence, Ordering};
+
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use memory::{create_contiguous_mapping, MappedPages, PhysicalAddress, DMA_FLAGS, PAGE_SIZE};
@@ -161,6 +163,8 @@ impl EventQueue {
         doorbell.eqs[self.number % 4].val.write(
             ((self.consumer_index & 0xffffff) | (arm as u32) << 31).into()
         );
+        // We still want ordering, just not swabbing, so add a barrier
+        compiler_fence(Ordering::SeqCst);
         Ok(())
     }
     

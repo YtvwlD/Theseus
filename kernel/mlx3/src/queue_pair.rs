@@ -794,8 +794,8 @@ impl WorkQueue {
             return Err("RQ size is invalid")
         }
         let mut wqe_cnt = ib_caps.max_recv_wr;
-        if wqe_cnt < 1 {
-            wqe_cnt = 1;
+        if wqe_cnt < 256 {
+            wqe_cnt = 256;
         }
         wqe_cnt = wqe_cnt.next_power_of_two();
         let mut max_gs = ib_caps.max_recv_sge;
@@ -843,7 +843,11 @@ impl WorkQueue {
         let wqe_shift = size.next_power_of_two().ilog2();
         // We need to leave 2 KB + 1 WR of headroom in the SQ to allow HW to prefetch.
         let spare_wqes = ib_sq_headroom(wqe_shift);
-        let wqe_cnt = (ib_caps.max_send_wr + spare_wqes).next_power_of_two();
+        let mut wqe_cnt = ib_caps.max_send_wr;
+        if wqe_cnt < 256 {
+            wqe_cnt = 256;
+        }
+        wqe_cnt = (wqe_cnt + spare_wqes).next_power_of_two();
         let max_gs = (u32::from(*[
             hca_caps.max_desc_sz_sq(), 1 << wqe_shift
         ].iter().min().unwrap()) - send_wqe_overhead(qp_type)) / u32::try_from(

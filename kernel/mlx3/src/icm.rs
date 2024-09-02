@@ -6,7 +6,13 @@ use mlx_infiniband::ibv_access_flags;
 use modular_bitfield_msb::{bitfield, prelude::{B10, B11, B21, B24, B28, B3, B4, B40, B7}};
 use zerocopy::{AsBytes, BigEndian, FromBytes, U64};
 
-use crate::{cmd::{CommandInterface, Opcode}, fw::{Capabilities, VirtualPhysicalMapping}, mcg::get_mgm_entry_size, profile::Profile, queue_pair::QueuePair, Offsets};
+use super::{
+    cmd::{CommandInterface, Opcode},
+    fw::{Capabilities, VirtualPhysicalMapping},
+    profile::{Profile, get_mgm_entry_size},
+    queue_pair::QueuePair,
+    Offsets,
+};
 
 pub(super) const ICM_PAGE_SHIFT: u8 = 12;
 

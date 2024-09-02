@@ -12,7 +12,6 @@ mod device;
 mod event_queue;
 mod fw;
 mod icm;
-mod mcg;
 mod port;
 mod profile;
 mod queue_pair;

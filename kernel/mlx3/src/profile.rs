@@ -87,7 +87,7 @@ impl Profile {
         profiles[ResourceType::DMPT as usize].size = caps.d_mpt_entry_sz().into();
         profiles[ResourceType::CMPT as usize].size = caps.c_mpt_entry_sz().into();
         profiles[ResourceType::MTT as usize].size = caps.mtt_entry_sz().into();
-        profiles[ResourceType::MCG as usize].size = super::mcg::get_mgm_entry_size();
+        profiles[ResourceType::MCG as usize].size = get_mgm_entry_size();
 
         profiles[ResourceType::QP as usize].num = DEFAULT_NUM_QP;
         profiles[ResourceType::RDMARC as usize].num = DEFAULT_NUM_QP * DEFAULT_RDMARC_PER_QP;
@@ -171,7 +171,7 @@ impl Profile {
                 },
                 ResourceType::MCG => {
                     init_hca.set_mc_base(profile.start);
-                    init_hca.set_mc_log_entry_sz(super::mcg::get_mgm_entry_size().ilog2().try_into().unwrap());
+                    init_hca.set_mc_log_entry_sz(get_mgm_entry_size().ilog2().try_into().unwrap());
                     init_hca.set_mc_log_table_sz(profile.lognum().try_into().unwrap());
                     init_hca.set_mc_log_hash_sz((profile.lognum() - 1).try_into().unwrap());
                     num_mgms = (profile.num >> 1).try_into().unwrap();
@@ -187,4 +187,11 @@ impl Profile {
             rdmarc_shift, init_hca, total_size,
         })
     }
+}
+
+pub(super) fn get_mgm_entry_size() -> u64 {
+    const DEFAULT_MGM_LOG_ENTRY_SIZE: usize = 10;
+
+    // TODO: how do we actually choose this correctly?
+    1 << DEFAULT_MGM_LOG_ENTRY_SIZE
 }

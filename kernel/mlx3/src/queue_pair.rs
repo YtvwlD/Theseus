@@ -254,22 +254,18 @@ impl QueuePair {
                 // TODO: rra_max, ric, next_recv_psn, qos_vport, roce_mode,
                 // TODO: rate_limit_index
                 assert!(attr_mask.contains(ibv_qp_attr_mask::IBV_QP_AV));
-                let mut primary_path_one = context.primary_path_one();
                 // RC and RC need rlid
                 if self.qp_type == ibv_qp_type::IBV_QPT_RC
                     || self.qp_type == ibv_qp_type::IBV_QPT_UC {
-                    primary_path_one.set_rlid(attr.ah_attr.dlid);
+                    context.set_primary_rlid(attr.ah_attr.dlid);
                 }
-                primary_path_one.set_grh(false);
-                primary_path_one.set_mlid(0); // might be slid
-                context.set_primary_path_one(primary_path_one);
-                let mut primary_path_two = context.primary_path_two();
-                primary_path_two.set_sched_queue(
+                context.set_primary_grh(false);
+                context.set_primary_mlid(0); // might be slid
+                context.set_primary_sched_queue(
                     DEFAULT_SCHED_QUEUE
                         | ((self.port_number - 1) << 6)
                         | ((attr.ah_attr.sl & 0xf) << 2)
                 );
-                context.set_primary_path_two(primary_path_two);
                 // TODO: mgid_index, ud_force_mgid, max_stat_rate, hop_limit,
                 // TODO: tclass, flow_label, rgid, link_type, if_counter_index
                 // set the optional parameters
@@ -290,11 +286,9 @@ impl QueuePair {
                     }
                 }
                 if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
-                    let mut primary_path = context.primary_path_one();
-                    primary_path.set_pkey_index(
+                    context.set_primary_pkey_index(
                         attr.pkey_index.try_into().unwrap()
                     );
-                    context.set_primary_path_one(primary_path);
                     param_mask.insert(OptionalParameterMask::PKEY_INDEX);
                 }
                 if self.qp_type == ibv_qp_type::IBV_QPT_RC
@@ -322,16 +316,14 @@ impl QueuePair {
                         param_mask.insert(OptionalParameterMask::REMOTE_READ);
                     }
                     if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_ALT_PATH) {
-                        let mut alt_path_one = context.alternate_path_one();
-                        alt_path_one.set_pkey_index(
+                        context.set_alternate_pkey_index(
                             attr.alt_pkey_index.try_into().unwrap()
                         );
-                        alt_path_one.set_rlid(attr.alt_ah_attr.dlid);
+                        context.set_alternate_rlid(attr.alt_ah_attr.dlid);
                         // TODO: ack_timeout, mgid_index, ud_force_mgid,
                         // TODO: max_stat_rate, hop_limit, tclass, flow_label,
                         // TODO: rgid, link_type, if_counter_index, vlan_index,
                         // TODO: dmac, cv
-                        context.set_alternate_path_one(alt_path_one);
                         param_mask.insert(
                             OptionalParameterMask::ALTERNATE_PATH
                         );
@@ -351,11 +343,9 @@ impl QueuePair {
                 }
                 // can update pkey_index
                 if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
-                    let mut primary_path = context.primary_path_one();
-                    primary_path.set_pkey_index(
+                    context.set_primary_pkey_index(
                         attr.pkey_index.try_into().unwrap()
                     );
-                    context.set_primary_path_one(primary_path);
                     param_mask.insert(OptionalParameterMask::PKEY_INDEX);
                 }
                 // can update access flags for RC and UC
@@ -396,9 +386,7 @@ impl QueuePair {
                     assert!(attr_mask.contains(
                         ibv_qp_attr_mask::IBV_QP_TIMEOUT
                     ));
-                    let mut primary_path = context.primary_path_one();
-                    primary_path.set_ack_timeout(attr.timeout);
-                    context.set_primary_path_one(primary_path);
+                    context.set_primary_ack_timeout(attr.timeout);
                 }
                 // set optional fields
                 // TODO: rate_limit_index
@@ -420,11 +408,9 @@ impl QueuePair {
                     }
                 }
                 if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PKEY_INDEX) {
-                    let mut primary_path = context.primary_path_one();
-                    primary_path.set_pkey_index(
+                    context.set_primary_pkey_index(
                         attr.pkey_index.try_into().unwrap()
                     );
-                    context.set_primary_path_one(primary_path);
                     param_mask.insert(OptionalParameterMask::PKEY_INDEX);
                 }
                 if self.qp_type == ibv_qp_type::IBV_QPT_RC
@@ -1115,12 +1101,51 @@ struct QueuePairContext {
     #[skip] __: u8,
     remote_qpn: B24,
     // nested bitfields are only allowed to be 128 bits
-    primary_path_one: QueuePairPathPartOne,
+    // and nesting bitfields makes them little endian
+    #[skip] __: B17,
+    primary_disable_pkey_check: bool,
+    #[skip] __: B7,
+    primary_pkey_index: B7,
+    #[skip] __: u8,
+    primary_grh: bool,
+    primary_mlid: B7,
+    primary_rlid: u16,
+    primary_ack_timeout: B5,
+    #[skip] __: B4,
+    primary_mgid_index: B7,
+    #[skip] __: u8,
+    primary_hop_limit: u8,
+    #[skip] __: B4,
+    primary_tclass: u8,
+    primary_flow_label: B20,
     primary_rgid: u128,
-    primary_path_two: QueuePairPathPartTwo,
-    alternate_path_one: QueuePairPathPartOne,
+    primary_sched_queue: u8,
+    #[skip] __: bool,
+    primary_vlan_index: B7,
+    #[skip] __: u32,
+    primary_dmac: B48,
+    #[skip] __: B17,
+    alternate_disable_pkey_check: bool,
+    #[skip] __: B7,
+    alternate_pkey_index: B7,
+    #[skip] __: u8,
+    alternate_grh: bool,
+    alternate_mlid: B7,
+    alternate_rlid: u16,
+    alternate_ack_timeout: B5,
+    #[skip] __: B4,
+    alternate_mgid_index: B7,
+    #[skip] __: u8,
+    alternate_hop_limit: u8,
+    #[skip] __: B4,
+    alternate_tclass: u8,
+    alternate_flow_label: B20,
     alternate_rgid: u128,
-    alternate_path_two: QueuePairPathPartTwo,
+    alternate_sched_queue: u8,
+    #[skip] __: bool,
+    alternate_vlan_index: B7,
+    #[skip] __: u32,
+    alternate_dmac: B48,
     #[skip] __: u16,
     rnr_retry: B3,
     #[skip] __: B53,
@@ -1166,38 +1191,6 @@ struct QueuePairContext {
     #[skip] __: u128,
     #[skip] __: u128,
     #[skip] __: u64,
-}
-
-// nested bitfields are only allowed to be 128 bits
-#[bitfield]
-#[derive(BitfieldSpecifier)]
-struct QueuePairPathPartOne {
-    #[skip] __: B17,
-    disable_pkey_check: bool,
-    #[skip] __: B7,
-    pkey_index: B7,
-    #[skip] __: u8,
-    grh: bool,
-    mlid: B7,
-    rlid: u16,
-    ack_timeout: B5,
-    #[skip] __: B4,
-    mgid_index: B7,
-    #[skip] __: u8,
-    hop_limit: u8,
-    #[skip] __: B4,
-    tclass: u8,
-    flow_label: B20,
-}
-
-#[bitfield]
-#[derive(BitfieldSpecifier)]
-struct QueuePairPathPartTwo {
-    sched_queue: u8,
-    #[skip] __: bool,
-    vlan_index: B7,
-    #[skip] __: u32,
-    dmac: B48,
 }
 
 #[derive(AsBytes, FromBytes)]

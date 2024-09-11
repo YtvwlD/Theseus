@@ -102,6 +102,17 @@ impl QueuePair {
         Ok(qp)
     }
 
+    /// Query this queue pair.
+    pub(super) fn query(&mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {
+        let page: MappedPages = cmd.execute_command(
+            Opcode::QueryQp, (), (), self.number,
+        )?;
+        let transition: &StateTransitionCommandParameter = page.as_type(0)?;
+        let context = QueuePairContext::from_bytes(transition.qpc_data);
+        trace!("Queue Pair Context: {context:?}");
+        Ok(())
+    }
+
     /// Modify this queue pair.
     /// 
     /// This is used by ibv_modify_qp.
@@ -1191,6 +1202,20 @@ struct QueuePairContext {
     #[skip] __: u128,
     #[skip] __: u128,
     #[skip] __: u64,
+}
+
+impl core::fmt::Debug for QueuePairContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f
+            .debug_struct("QueuePairContext")
+            .field("state", &self.state())
+            .field("MTU", &ibv_mtu::from_repr(self.mtu()))
+            .field("QKEY", &self.qkey())
+            .field("QP Number", &self.local_qpn())
+            .field("Send Counter", &self.sq_wqe_counter())
+            .field("Receive Counter", &self.rq_wqe_counter())
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(AsBytes, FromBytes)]

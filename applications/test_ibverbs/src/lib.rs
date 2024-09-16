@@ -3,7 +3,9 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
+use byteorder::BigEndian;
 use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
+use zerocopy::{U16, U32, U64};
 
 const RDMA_WRITE_TEST_PACKET_SIZE: usize = 1 << 20;
 const RDMA_REGION_SIZE: usize = RDMA_WRITE_TEST_PACKET_SIZE * 2;
@@ -11,10 +13,10 @@ const RDMA_REGION_SIZE: usize = RDMA_WRITE_TEST_PACKET_SIZE * 2;
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default, Debug)]
 struct ConnectionInformation {
-  lid: u16,
-  qpn: u32,
-  rkey: u32,
-  addr: u64,
+  lid: U16<BigEndian>,
+  qpn: U32<BigEndian>,
+  rkey: U32<BigEndian>,
+  addr: U64<BigEndian>,
 }
 
 impl ConnectionInformation {
@@ -152,10 +154,10 @@ pub fn main(args: Vec<String>) -> isize {
     let mut rdma_mr = pd.allocate::<u8>(RDMA_REGION_SIZE)
         .expect("failed to allocate data memory region");
     let my_con_inf = ConnectionInformation {
-        lid: rdma_pqp.endpoint().lid.to_be(),
-        qpn: rdma_pqp.endpoint().num.to_be(),
-        rkey: rdma_mr.rkey().key.to_be(),
-        addr: (rdma_mr.as_mut_ptr() as u64).to_be(),
+        lid: rdma_pqp.endpoint().lid.into(),
+        qpn: rdma_pqp.endpoint().num.into(),
+        rkey: rdma_mr.rkey().key.into(),
+        addr: (rdma_mr.as_mut_ptr() as u64).into(),
     };
 
     if args.into_iter().find(|a| a == "-s").is_some() {

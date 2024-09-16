@@ -3902,7 +3902,9 @@ name = "test_ibverbs"
 version = "0.1.0"
 dependencies = [
  "app_io",
+ "byteorder",
  "ibverbs",
+ "zerocopy",
 ]
 
 [[package]]

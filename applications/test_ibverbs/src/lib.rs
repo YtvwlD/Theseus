@@ -2,13 +2,27 @@
 #[macro_use] extern crate app_io;
 extern crate alloc;
 
+use core::time::Duration;
 use alloc::{string::String, vec::Vec};
+
 use byteorder::BigEndian;
+use crc::{Crc, CRC_32_ISO_HDLC};
 use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
+use sleep::sleep;
+use time::Instant;
 use zerocopy::{U16, U32, U64};
 
 const RDMA_WRITE_TEST_PACKET_SIZE: usize = 1 << 20;
 const RDMA_REGION_SIZE: usize = RDMA_WRITE_TEST_PACKET_SIZE * 2;
+const RDMA_WRITE_TEST_MSG_COUNT: usize = 390625;
+const RDMA_WRITE_TEST_QUEUE_SIZE: usize = 100;
+
+fn crc32(seed: u32, data: &[u8]) -> u32 {
+    assert_eq!(seed, 0);
+    // this should be the right one (0xedb88320, but reversed)
+    const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
+    CRC.checksum(data)
+}
 
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default, Debug)]
@@ -20,6 +34,86 @@ struct ConnectionInformation {
 }
 
 impl ConnectionInformation {
+    fn recv_rdma_write_test(&self, pqp: PreparedQueuePair, mr: &mut MemoryRegion<u8>) {
+        let crc = crc32(0, &mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
+        println!("The initial checksum of the data is {crc:x}");
+
+        // TODO: we can't influence the MTU this way
+        // What is context.port_attr.active_mtu?
+        let _qp = pqp.handshake(QueuePairEndpoint {
+            num: self.qpn.get(), lid: self.lid.get(), gid: None,
+        })
+            .expect("handshake failed");
+        for _ in 0..130 {
+            sleep(Duration::from_secs(1)).unwrap();
+        }
+        let crc = crc32(0, &mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
+        println!("The checksum of the data last received is {crc:x}");
+    }
+
+    fn send_rdma_write_test(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, mr: &mut MemoryRegion<u8>) {
+        // TODO: we can't influence the MTU this way
+        // What is context.port_attr.active_mtu?
+        let mut qp = pqp.handshake(QueuePairEndpoint {
+            num: self.qpn.get(), lid: self.lid.get(), gid: None,
+        })
+            .expect("handshake failed");
+        let mut completions = [ibv_wc::default(); RDMA_WRITE_TEST_QUEUE_SIZE];
+        let mut pending_completions = 0;
+        let mut msg_count = RDMA_WRITE_TEST_MSG_COUNT;
+        for i in 0..RDMA_WRITE_TEST_PACKET_SIZE {
+            mr[i] = b'x';
+        }
+        let start = Instant::now();
+        while msg_count > 0 {
+            let mut batch_size = RDMA_WRITE_TEST_QUEUE_SIZE - pending_completions;
+            if batch_size > msg_count {
+                batch_size = msg_count;
+            }
+            // TODO: remote info needs to go here
+            unsafe { qp.post_send(mr, 0..batch_size, 0) }
+                .expect("rdma write failed");
+            pending_completions += batch_size;
+            msg_count -= batch_size;
+            for completion in cq.poll(&mut completions)
+                .expect("failed to poll for completions") {
+                if !completion.is_valid() {
+                    panic!("work completion failed: {:?}", completion.error());
+                }
+                pending_completions -= 1;
+            }
+        }
+        while pending_completions > 0 {
+            for completion in cq.poll(&mut completions)
+                .expect("failed to poll for completions") {
+                if !completion.is_valid() {
+                    panic!("work completion failed: {:?}", completion.error());
+                }
+                pending_completions -= 1;
+            }
+        }
+        let end = Instant::now();
+        let total_data: u64 = (
+            RDMA_WRITE_TEST_MSG_COUNT * RDMA_WRITE_TEST_PACKET_SIZE
+        ).try_into().unwrap();
+        let total_data_mib = total_data as f64 / 1024.0 / 1024.0;
+        let total_data_mb = total_data as f64 / 1000.0 / 1000.0;
+        let send_total_time = end - start;
+        let send_avg_throughput_mib = total_data_mib / send_total_time.as_secs_f64();
+        let send_avg_throughput_mb = total_data_mb / send_total_time.as_secs_f64();
+        let send_avg_latency = send_total_time.as_millis() / RDMA_WRITE_TEST_MSG_COUNT as u128;
+        let crc = crc32(0, &mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
+        println!("Results:");
+        println!("  Total time: {} s", send_total_time.as_secs_f32());
+        println!("  Total data: {total_data_mib} MiB ({total_data_mb} MB)");
+        println!(
+            "  Average send throughput: {} MiB/s ({} MB/s)",
+            send_avg_throughput_mib, send_avg_throughput_mb,
+        );
+        println!("   Average send latency: {send_avg_latency} us");
+        println!("   CRC32: {crc:x}");
+    }
+
     fn send(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16, remote_qpn: u32, mr: &mut MemoryRegion<Self>) -> Self {
         // TODO: we can't influence the MTU this way
         // What is context.port_attr.active_mtu?
@@ -165,11 +259,14 @@ pub fn main(args: Vec<String>) -> isize {
         let remote_con_inf = my_con_inf.recv(
             cx_pqp, &cq, remote_lid, remote_qpn, &mut cx_mr,
         );
+        sleep(Duration::from_secs(1)).unwrap();
+        remote_con_inf.send_rdma_write_test(rdma_pqp, &cq, &mut rdma_mr);
     } else {
         println!("I am the receiving host");
         let remote_con_inf = my_con_inf.send(
             cx_pqp, &cq, remote_lid, remote_qpn, &mut cx_mr,
         );
+        remote_con_inf.recv_rdma_write_test(rdma_pqp, &mut rdma_mr);
     }
     0
 }

@@ -118,7 +118,7 @@ impl ConnectX3Nic {
         let mut command_interface = CommandInterface::new(&mut nic.config_regs)?;
         let firmware_area = nic.firmware_area.as_mut().unwrap();
         firmware_area.run(&mut command_interface)?;
-        nic.capabilities = Some(firmware_area.query_capabilities(&mut command_interface)?);
+        nic.capabilities = Some(firmware_area.repeat_query_capabilities(&mut command_interface)?);
         let caps = nic.capabilities.as_ref().unwrap();
         // In the Nautilus driver, some of the port setup already happens here.
         nic.offsets = Some(Offsets::init(caps));

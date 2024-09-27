@@ -154,6 +154,25 @@ impl MappedFirmwareArea {
         trace!("got caps: {:?}", caps);
         Ok(caps)
     }
+
+    /// Query the capabilities a few times, as it fails sometimes.
+    pub(crate) fn repeat_query_capabilities(
+        &self, cmd: &mut CommandInterface,
+    ) -> Result<Capabilities, &'static str> {
+        let mut caps = None;
+        for _ in 0..3 {
+            match self.query_capabilities(cmd) {
+                Ok(c) => if c.max_icm_sz() == 0 {
+                    warn!("got wrong capabilities, trying again (ICM size = 0)");
+                } else {
+                    caps = Some(c);
+                    break;
+                },
+                Err(e) => warn!("failed to query for capabilities, trying again: {e}"),
+            }
+        }
+        caps.ok_or("couldn't query capabilities")
+    }
     
     /// Unmaps the area from the card. Further usage requires a software reset.
     pub(super) fn unmap(mut self, cmd: &mut CommandInterface) -> Result<(), &'static str> {

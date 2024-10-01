@@ -9,7 +9,6 @@ authors = ["Niklas Sombert <niklas.sombert@uni-duesseldorf.de>"]
 [dependencies]
 app_io = { path = "../../kernel/app_io" }
 byteorder = { version = "1.4.3", default-features = false }
-crc = "3.0.1"
 ibverbs = { path = "../../ports/ibverbs", default-features = false }
 sleep = { path = "../../kernel/sleep" }
 time = { path = "../../kernel/time" }

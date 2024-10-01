@@ -6,7 +6,6 @@ use core::time::Duration;
 use alloc::{string::String, vec::Vec};
 
 use byteorder::BigEndian;
-use crc::{Crc, CRC_32_ISO_HDLC};
 use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
 use sleep::sleep;
 use time::Instant;
@@ -17,11 +16,21 @@ const RDMA_REGION_SIZE: usize = RDMA_WRITE_TEST_PACKET_SIZE * 2;
 const RDMA_WRITE_TEST_MSG_COUNT: usize = 390625;
 const RDMA_WRITE_TEST_QUEUE_SIZE: usize = 100;
 
+fn crc32_generic(seed: u32, data: &[u8], polynomial: u32) -> u32 {
+    let mut crc = seed;
+    for idx in 0..data.len() {
+        crc ^= u32::from(data[idx]);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (if crc & 1 != 0 { polynomial } else { 0 });
+        }
+    }
+    crc
+}
+
 fn crc32(seed: u32, data: &[u8]) -> u32 {
+    const POLYNOMIAL: u32 = 0xedb88320;
     assert_eq!(seed, 0);
-    // this should be the right one (0xedb88320, but reversed)
-    const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
-    CRC.checksum(data)
+    crc32_generic(seed, data, POLYNOMIAL)
 }
 
 #[repr(C, packed)]

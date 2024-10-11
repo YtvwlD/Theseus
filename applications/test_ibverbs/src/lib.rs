@@ -2,11 +2,15 @@
 #[macro_use] extern crate app_io;
 extern crate alloc;
 
-use core::time::Duration;
+use core::{marker::PhantomData, time::Duration};
 use alloc::{string::String, vec::Vec};
 
 use byteorder::BigEndian;
-use ibverbs::{ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode, CompletionQueue, MemoryRegion, PreparedQueuePair, QueuePairEndpoint};
+use ibverbs::{
+    ibv_qp_type::{IBV_QPT_RC, IBV_QPT_UC}, ibv_wc, ibv_wc_opcode,
+    CompletionQueue, LocalMemoryRegion, PreparedQueuePair, QueuePairEndpoint,
+    RemoteMemoryRegion,
+};
 use sleep::sleep;
 use time::Instant;
 use zerocopy::{U16, U32, U64};
@@ -43,7 +47,9 @@ struct ConnectionInformation {
 }
 
 impl ConnectionInformation {
-    fn recv_rdma_write_test(&self, pqp: PreparedQueuePair, mr: &mut MemoryRegion<u8>) {
+    fn recv_rdma_write_test(
+        &self, pqp: PreparedQueuePair, mr: &mut LocalMemoryRegion<u8>,
+    ) {
         let crc = crc32(0, &mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
         println!("The initial checksum of the data is {crc:x}");
 
@@ -60,7 +66,16 @@ impl ConnectionInformation {
         println!("The checksum of the data last received is {crc:x}");
     }
 
-    fn send_rdma_write_test(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, mr: &mut MemoryRegion<u8>) {
+    fn send_rdma_write_test(
+        &self, pqp: PreparedQueuePair, cq: &CompletionQueue,
+        local_mr: &mut LocalMemoryRegion<u8>,
+    ) {
+        let mut remote_mr = RemoteMemoryRegion {
+            addr: self.addr.get(),
+            len: RDMA_REGION_SIZE,
+            rkey: self.rkey.get(),
+            phantom: PhantomData::<u8>,
+        };
         // TODO: we can't influence the MTU this way
         // What is context.port_attr.active_mtu?
         let mut qp = pqp.handshake(QueuePairEndpoint {
@@ -71,7 +86,7 @@ impl ConnectionInformation {
         let mut pending_completions = 0;
         let mut msg_count = RDMA_WRITE_TEST_MSG_COUNT;
         for i in 0..RDMA_WRITE_TEST_PACKET_SIZE {
-            mr[i] = b'x';
+            local_mr[i] = b'x';
         }
         let start = Instant::now();
         while msg_count > 0 {
@@ -79,9 +94,9 @@ impl ConnectionInformation {
             if batch_size > msg_count {
                 batch_size = msg_count;
             }
-            // TODO: remote info needs to go here
-            unsafe { qp.post_send(mr, 0..batch_size, 0) }
-                .expect("rdma write failed");
+            unsafe { qp.rdma_write(
+                local_mr, 0..batch_size, &mut remote_mr, 0..batch_size as u64, 0,
+            ) }.expect("rdma write failed");
             pending_completions += batch_size;
             msg_count -= batch_size;
             for completion in cq.poll(&mut completions)
@@ -111,7 +126,7 @@ impl ConnectionInformation {
         let send_avg_throughput_mib = total_data_mib / send_total_time.as_secs_f64();
         let send_avg_throughput_mb = total_data_mb / send_total_time.as_secs_f64();
         let send_avg_latency = send_total_time.as_millis() / RDMA_WRITE_TEST_MSG_COUNT as u128;
-        let crc = crc32(0, &mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
+        let crc = crc32(0, &local_mr[0..RDMA_WRITE_TEST_PACKET_SIZE]);
         println!("Results:");
         println!("  Total time: {} s", send_total_time.as_secs_f32());
         println!("  Total data: {total_data_mib} MiB ({total_data_mb} MB)");
@@ -123,7 +138,10 @@ impl ConnectionInformation {
         println!("   CRC32: {crc:x}");
     }
 
-    fn send(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16, remote_qpn: u32, mr: &mut MemoryRegion<Self>) -> Self {
+    fn send(
+        &self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16,
+        remote_qpn: u32, mr: &mut LocalMemoryRegion<Self>,
+    ) -> Self {
         // TODO: we can't influence the MTU this way
         // What is context.port_attr.active_mtu?
         let mut qp = pqp.handshake(QueuePairEndpoint {
@@ -169,7 +187,10 @@ impl ConnectionInformation {
         mr[0]
     }
 
-    fn recv(&self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16, remote_qpn: u32, mr: &mut MemoryRegion<Self>) -> Self {
+    fn recv(
+        &self, pqp: PreparedQueuePair, cq: &CompletionQueue, remote_lid: u16,
+        remote_qpn: u32, mr: &mut LocalMemoryRegion<Self>,
+    ) -> Self {
         // TODO: we can't influence the MTU this way
         // What is context.port_attr.active_mtu?
         let mut qp = pqp.handshake(QueuePairEndpoint {
@@ -259,8 +280,8 @@ pub fn main(args: Vec<String>) -> isize {
     let my_con_inf = ConnectionInformation {
         lid: rdma_pqp.endpoint().lid.into(),
         qpn: rdma_pqp.endpoint().num.into(),
-        rkey: rdma_mr.rkey().key.into(),
-        addr: (rdma_mr.as_mut_ptr() as u64).into(),
+        rkey: rdma_mr.remote().rkey.into(),
+        addr: rdma_mr.remote().addr.into(),
     };
 
     if args.into_iter().find(|a| a == "-s").is_some() {

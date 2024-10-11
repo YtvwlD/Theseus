@@ -306,14 +306,14 @@ impl MrTable {
         Ok(addr)
     }
     
-    /// Allocate an entry in the Data Memory Protection Table and return its index, lkey and rkey.
+    /// Allocate an entry in the Data Memory Protection Table and return its index, physical address, lkey and rkey.
     /// 
     /// This is used by ibv_reg_mr.
     pub(super) fn alloc_dmpt<T>(
         &mut self, cmd: &mut CommandInterface, caps: &Capabilities,
         offsets: &mut Offsets, data: &mut [T], queue_pair: Option<&QueuePair>,
         access: ibv_access_flags,
-    ) -> Result<(u32, u32, u32), &'static str> {
+    ) -> Result<(u32, usize, u32, u32), &'static str> {
         let size = data.len() * size_of::<T>();
         let address = translate_to_physical(VirtualAddress::new(
             data.as_ptr() as usize
@@ -372,7 +372,7 @@ impl MrTable {
         let dmpt_key = dmpt.key();
 
         self.regions.push(MemoryRegion { dmpt: Some(dmpt) });
-        Ok((dmpt_index, dmpt_lkey, dmpt_key))
+        Ok((dmpt_index, address.value(), dmpt_lkey, dmpt_key))
     }
     
     /// Tear down all memory regions.

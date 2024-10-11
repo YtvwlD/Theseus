@@ -13,8 +13,8 @@ pub use mlx_infiniband::{
     __be64, ibv_access_flags, ibv_ah_attr, ibv_device_attr, ibv_gid, ibv_mtu,
     ibv_port_attr, ibv_port_state,
     ibv_qp_attr, ibv_qp_attr_mask, ibv_qp_cap, ibv_qp_state, ibv_qp_type,
-    ibv_recv_wr, ibv_send_wr, ibv_send_flags, ibv_sge, ibv_wr_opcode,
-    ibv_wc, ibv_wc_opcode, ibv_wc_status,
+    ibv_recv_wr, ibv_send_wr, ibv_send_wr_wr, ibv_send_flags, ibv_sge,
+    ibv_wr_opcode, ibv_wc, ibv_wc_opcode, ibv_wc_status,
 };
 use sync_irq::{IrqSafeMutex, IrqSafeMutexGuard};
 
@@ -75,6 +75,9 @@ impl Drop for ibv_cq<'_> {
 pub struct ibv_mr<'pd> {
     pd: &'pd ibv_pd<'pd>,
     index: u32,
+    /// physical address
+    pub addr: usize,
+    pub length: usize,
     pub lkey: u32,
     pub rkey: u32,
 }
@@ -197,11 +200,12 @@ pub fn ibv_alloc_pd(context: &ibv_context) -> Result<ibv_pd> {
 pub fn ibv_reg_mr<'pd, T>(
     pd: &'pd ibv_pd, data: &mut [T], access: ibv_access_flags,
 ) -> Result<ibv_mr<'pd>> {
-    let (index, lkey, rkey) = pd.context
+    let (index, addr, lkey, rkey) = pd.context
         .lock()
         .create_mr(data, access)
         .map_err(|s| Error::new(ErrorKind::Other, s))?;
-    Ok(ibv_mr { pd, index, lkey, rkey })
+    let length = data.len();
+    Ok(ibv_mr { pd, index, addr, length, lkey, rkey })
 }
 
 /// Create a completion queue

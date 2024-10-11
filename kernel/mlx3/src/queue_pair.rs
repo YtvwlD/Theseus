@@ -669,6 +669,7 @@ impl QueuePair {
         if num_req == 0 {
             return Ok(());
         }
+        // TODO: bf fails for RDMA writes
         if blueflame.is_some() && caps.bf() && num_req == 1 {
             trace!("Using BlueFlame");
             index -= 1;

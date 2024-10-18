@@ -219,16 +219,16 @@ impl ConnectionInformation {
         // respond with own connection data
         // put our information in the second slot
         mr[1] = *self;
-        unsafe { qp.post_send(mr, 1..2, 0) }
-            .expect("failed to send own connection info");
-        loop {
+        // this is UC, send it a few times
+        for _ in 0..25 {
+            unsafe { qp.post_send(mr, 1..2, 0) }
+                .expect("failed to send own connection info");
             let completion = cq.poll(&mut completions)
                 .expect("failed to poll for completions").get(0);
             if let Some(c) = completion {
                 if !c.is_valid() {
                     panic!("work completion failed: {:?}", c.error());
                 }
-                break;
             }
         }
         println!("Answered connection info with {self:?}");

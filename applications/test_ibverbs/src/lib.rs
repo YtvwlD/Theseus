@@ -2,6 +2,7 @@
 #[macro_use] extern crate app_io;
 extern crate alloc;
 
+mod connection;
 mod rdma;
 
 use alloc::{string::String, vec::Vec};
@@ -51,6 +52,6 @@ pub fn main(args: Vec<String>) -> isize {
     if args.iter().find(|a| a == &"--rdma").is_some() {
         rdma::run_test(pd, cq, args)
     } else {
-        todo!()
+        connection::run_test(pd, cq, args)
     }
 }

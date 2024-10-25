@@ -73,6 +73,28 @@ impl Port {
     pub(super) fn query(
         &mut self, cmd: &mut CommandInterface,
     ) -> Result<ibv_port_attr, &'static str> {
+        // Querying the port might fail, so try this a few times.
+        let mut attr = None;
+        let mut err = None;
+        for _ in 0..5 {
+            match self.query_single(cmd) {
+                Ok(a) => {
+                    attr = Some(a);
+                    break;
+                },
+                Err(e) => {
+                    warn!("querying the port failed with: {e:?}");
+                    err = Some(e);
+                },
+            }
+        }
+        attr.ok_or_else(|| err.unwrap())
+    }
+
+    /// Actually query the port.
+    fn query_single(
+        &mut self, cmd: &mut CommandInterface,
+    ) -> Result<ibv_port_attr, &'static str> {
         // QUERY_PORT gives us some details
         let page: MappedPages = cmd.execute_command(
             Opcode::QueryPort, (), (), self.number.into(),

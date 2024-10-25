@@ -309,6 +309,7 @@ impl ConnectX3Nic {
     pub fn create_mr<T>(
         &mut self, data: &mut [T], access: ibv_access_flags,
     ) -> Result<(u32, usize, u32, u32), &'static str> {
+        // TODO: this fails for large memory regions (>= 64 MB)
         let memory_regions = self.icm_tables.as_mut().unwrap().memory_regions();
         let mut cmd = CommandInterface::new(&mut self.config_regs)?;
         memory_regions.alloc_dmpt(

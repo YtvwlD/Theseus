@@ -508,7 +508,7 @@ impl QueuePair {
         let mut num_req = 0;
         while current.is_some() {
             let curr = current.take().unwrap();
-            trace!("writing WQE {}...", index & (self.rq.wqe_cnt - 1));
+            trace!("writing WQE {index}...");
             // make sure that we're not overflowing
             if self.rq.would_overflow(num_req) {
                 return Err("receive queue would overflow");
@@ -520,14 +520,14 @@ impl QueuePair {
             let mut sge_index = 0;
             for sge in &curr.sg_list {
                 let elem: &mut WqeDataSegment = self.rq.get_element(
-                    self.memory.as_mut().unwrap(), (index + sge_index) & (self.rq.wqe_cnt - 1),
+                    self.memory.as_mut().unwrap(), index + sge_index,
                 )?;
                 elem.copy_from_sge(sge)?;
                 sge_index += 1;
             }
             // fill the last one
             let last_elem: &mut WqeDataSegment = self.rq.get_element(
-                    self.memory.as_mut().unwrap(), (index + sge_index) & (self.rq.wqe_cnt - 1),
+                    self.memory.as_mut().unwrap(), index + sge_index,
             )?;
             *last_elem = WqeDataSegment::last();
             num_req += 1;
@@ -568,7 +568,7 @@ impl QueuePair {
         let memory = self.memory.as_mut().unwrap();
         while current.is_some() {
             let curr = current.take().unwrap();
-            trace!("Writing WQE {}...", index & (self.sq.wqe_cnt - 1));
+            trace!("Writing WQE {index}...");
             // make sure that we're not overflowing
             if self.sq.would_overflow(num_req) {
                 return Err("send queue would overflow");
@@ -579,8 +579,7 @@ impl QueuePair {
             }
             let ctrl_addr = {
                 let ctrl: &mut WqeControlSegment = self.sq.get_element(
-                    // wrap around
-                    memory, index & (self.sq.wqe_cnt - 1),
+                    memory, index,
                 )?;
                 ctrl.vlan_cv_f_ds = 0.into();
                 ctrl.flags = WqeControlSegmentFlags::CQ_UPDATE.bits().into();
@@ -633,10 +632,7 @@ impl QueuePair {
             // Possibly overwrite stamping in cacheline with LSO segment
             // only after making sure all data segments are written.
             compiler_fence(Ordering::SeqCst);
-            let ctrl: &mut WqeControlSegment = self.sq.get_element(
-                // wrap around
-                memory, index & (self.sq.wqe_cnt - 1),
-            )?;
+            let ctrl: &mut WqeControlSegment = self.sq.get_element(memory, index)?;
             ctrl.vlan_cv_f_ds = u32::try_from(wqe_size / 16).unwrap().into();
             // Make sure descriptor is fully written before setting ownership
             // bit (because HW can start executing as soon as we do).
@@ -656,10 +652,7 @@ impl QueuePair {
             // until after ringing the doorbell, so only stamp here if there are
             // still more WQEs to post.
             if curr.next.is_some() {
-                self.sq.stamp_wqe(
-                    memory,
-                    (index + self.sq.spare_wqes.unwrap()) & (self.sq.wqe_cnt - 1),
-                )?;
+                self.sq.stamp_wqe(memory, index + self.sq.spare_wqes.unwrap())?;
             }
             num_req += 1;
             index += 1;
@@ -676,8 +669,7 @@ impl QueuePair {
             index -= 1;
             let (size, ctrl_address) = {
                 let ctrl: &mut WqeControlSegment = self.sq.get_element(
-                    // wrap around
-                    memory, index & (self.sq.wqe_cnt - 1),
+                    memory, index,
                 )?;
                 ctrl.owner_opcode.set(
                     ctrl.owner_opcode.get() | ((self.sq.head & 0xffff) << 8)
@@ -713,10 +705,7 @@ impl QueuePair {
                 .as_type_mut(0)?;
             doorbell.send_queue_number.write((self.number << 8).into());
         }
-        self.sq.stamp_wqe(
-            memory,
-            (index + self.sq.spare_wqes.unwrap() - 1) & (self.sq.wqe_cnt - 1)
-        )?;
+        self.sq.stamp_wqe(memory, index + self.sq.spare_wqes.unwrap() - 1)?;
         self.sq.head += num_req;
         Ok(())
     }
@@ -874,12 +863,14 @@ impl WorkQueue {
     }
     
     /// Get an element of this work queue.
+    /// 
+    /// The index wraps around to the beginning.
     fn get_element<'e, T: FromBytes>(
-        &self, memory: &'e mut (MappedPages, PhysicalAddress), index: u32,
+        &self, memory: &'e mut (MappedPages, PhysicalAddress), mut index: u32,
     ) -> Result<&'e mut T, &'static str> {
+        // wrap around
+        index &= self.wqe_cnt - 1;
         trace!("getting element {index}...");
-        // don't run over the end
-        assert!(index < self.wqe_cnt);
         let (pages, _addresss) = memory;
         pages.as_type_mut(
             (self.offset + (index << self.wqe_shift)).try_into().unwrap()

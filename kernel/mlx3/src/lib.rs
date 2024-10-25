@@ -279,8 +279,6 @@ impl ConnectX3Nic {
         let qp = self.qps.iter_mut()
             .find(|qp| qp.number() == qp_number)
             .ok_or("invalid queue pair number")?;
-        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
-        qp.query(&mut cmd)?;
         qp.post_receive(wr)
     }
 
@@ -293,8 +291,6 @@ impl ConnectX3Nic {
         let qp = self.qps.iter_mut()
             .find(|qp| qp.number() == qp_number)
             .ok_or("invalid queue pair number")?;
-        let mut cmd = CommandInterface::new(&mut self.config_regs)?;
-        qp.query(&mut cmd)?;
         // TODO: check if blue flame is available
         qp.post_send(
             self.capabilities.as_ref().unwrap(), &mut self.doorbells,

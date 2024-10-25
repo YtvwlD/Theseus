@@ -503,12 +503,12 @@ impl QueuePair {
          && self.state != ibv_qp_state::IBV_QPS_RTS {
             return Err("queue pair cannot receive in this state");
         }
-        // wrap around
-        let mut index = self.rq.head & (self.rq.wqe_cnt - 1);
+        let mut index = self.rq.head;
         let mut current = Some(wr);
         let mut num_req = 0;
         while current.is_some() {
             let curr = current.take().unwrap();
+            trace!("writing WQE {}...", index & (self.rq.wqe_cnt - 1));
             // make sure that we're not overflowing
             if self.rq.would_overflow(num_req) {
                 return Err("receive queue would overflow");
@@ -520,18 +520,18 @@ impl QueuePair {
             let mut sge_index = 0;
             for sge in &curr.sg_list {
                 let elem: &mut WqeDataSegment = self.rq.get_element(
-                    self.memory.as_mut().unwrap(), index + sge_index,
+                    self.memory.as_mut().unwrap(), (index + sge_index) & (self.rq.wqe_cnt - 1),
                 )?;
                 elem.copy_from_sge(sge)?;
                 sge_index += 1;
             }
             // fill the last one
             let last_elem: &mut WqeDataSegment = self.rq.get_element(
-                    self.memory.as_mut().unwrap(), index + sge_index,
+                    self.memory.as_mut().unwrap(), (index + sge_index) & (self.rq.wqe_cnt - 1),
             )?;
             *last_elem = WqeDataSegment::last();
             num_req += 1;
-            index = (index + 1) & (self.rq.wqe_cnt - 1);
+            index += 1;
             // TODO: support multiple work requests
             assert!(curr.next.is_none());
         }
@@ -568,6 +568,7 @@ impl QueuePair {
         let memory = self.memory.as_mut().unwrap();
         while current.is_some() {
             let curr = current.take().unwrap();
+            trace!("Writing WQE {}...", index & (self.sq.wqe_cnt - 1));
             // make sure that we're not overflowing
             if self.sq.would_overflow(num_req) {
                 return Err("send queue would overflow");
@@ -656,10 +657,10 @@ impl QueuePair {
             // still more WQEs to post.
             if curr.next.is_some() {
                 self.sq.stamp_wqe(
-                    memory, index + self.sq.spare_wqes.unwrap(),
+                    memory,
+                    (index + self.sq.spare_wqes.unwrap()) & (self.sq.wqe_cnt - 1),
                 )?;
             }
-            
             num_req += 1;
             index += 1;
             // TODO: support multiple work requests
@@ -712,7 +713,10 @@ impl QueuePair {
                 .as_type_mut(0)?;
             doorbell.send_queue_number.write((self.number << 8).into());
         }
-        self.sq.stamp_wqe(memory, index + self.sq.spare_wqes.unwrap() - 1)?;
+        self.sq.stamp_wqe(
+            memory,
+            (index + self.sq.spare_wqes.unwrap() - 1) & (self.sq.wqe_cnt - 1)
+        )?;
         self.sq.head += num_req;
         Ok(())
     }
@@ -769,6 +773,7 @@ struct QueuePairDoorbell {
     receive_wqe_index: WriteOnly<U16<BigEndian>>,
 }
 
+#[derive(Debug)]
 struct WorkQueue {
     wqe_cnt: u32,
     max_post: u32,
@@ -872,6 +877,9 @@ impl WorkQueue {
     fn get_element<'e, T: FromBytes>(
         &self, memory: &'e mut (MappedPages, PhysicalAddress), index: u32,
     ) -> Result<&'e mut T, &'static str> {
+        trace!("getting element {index}...");
+        // don't run over the end
+        assert!(index < self.wqe_cnt);
         let (pages, _addresss) = memory;
         pages.as_type_mut(
             (self.offset + (index << self.wqe_shift)).try_into().unwrap()
@@ -910,12 +918,6 @@ impl WorkQueue {
     fn would_overflow(&self, num_req: u32) -> bool {
         let cur = self.head - self.tail;
         cur + num_req >= self.max_post
-    }
-}
-
-impl core::fmt::Debug for WorkQueue {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("WorkQueue").finish_non_exhaustive()
     }
 }
 

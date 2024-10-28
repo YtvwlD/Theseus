@@ -189,7 +189,6 @@ impl CompletionQueue {
         *wc = ibv_wc::default();
         if let Some(cqe) = self.get_next_cqe_sw()? {
             self.consumer_index += 1;
-            trace!("got cqe: {:?}", cqe);
             // Make sure we read CQ entry contents after we've checked the
             // ownership bit.
             compiler_fence(Ordering::SeqCst);

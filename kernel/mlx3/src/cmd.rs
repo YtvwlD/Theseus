@@ -356,7 +356,6 @@ impl<'a> CommandInterface<'a> {
 
     fn is_pending(&self) -> bool {
         let status = self.hcr.status_opcode.read().get();
-        trace!("is_pending: got status: {status:#x}");
         status & (1 << HCR_GO_BIT) != 0 || (status & (1 << HCR_T_BIT)) == self.exp_toggle
     }
 }

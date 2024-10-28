@@ -514,7 +514,6 @@ impl QueuePair {
     pub(super) fn post_receive(
         &mut self, wr: &mut ibv_recv_wr
     ) -> Result<(), &'static str> {
-        trace!("Posting {wr:?}...");
         if self.state != ibv_qp_state::IBV_QPS_RTR
          && self.state != ibv_qp_state::IBV_QPS_RTS {
             return Err("queue pair cannot receive in this state");
@@ -524,7 +523,6 @@ impl QueuePair {
         let mut num_req = 0;
         while current.is_some() {
             let curr = current.take().unwrap();
-            trace!("writing WQE {index}...");
             // make sure that we're not overflowing
             if self.rq.would_overflow(num_req) {
                 return Err("receive queue would overflow");
@@ -573,7 +571,6 @@ impl QueuePair {
         &mut self, caps: &Capabilities, doorbells: &mut [MappedPages],
         blueflame: Option<&mut [MappedPages]>, wr: &mut ibv_send_wr,
     ) -> Result<(), &'static str> {
-        trace!("Posting {wr:?}...");
         if self.state != ibv_qp_state::IBV_QPS_RTS {
             return Err("queue pair cannot send in this state");
         }
@@ -584,7 +581,6 @@ impl QueuePair {
         let memory = self.memory.as_mut().unwrap();
         while current.is_some() {
             let curr = current.take().unwrap();
-            trace!("Writing WQE {index}...");
             // make sure that we're not overflowing
             if self.sq.would_overflow(num_req) {
                 return Err("send queue would overflow");
@@ -681,7 +677,6 @@ impl QueuePair {
         }
         // TODO: bf fails for RDMA writes
         if blueflame.is_some() && caps.bf() && num_req == 1 {
-            trace!("Using BlueFlame");
             index -= 1;
             let (size, ctrl_address) = {
                 let ctrl: &mut WqeControlSegment = self.sq.get_element(
@@ -886,7 +881,6 @@ impl WorkQueue {
     ) -> Result<&'e mut T, &'static str> {
         // wrap around
         index &= self.wqe_cnt - 1;
-        trace!("getting element {index}...");
         let (pages, _addresss) = memory;
         pages.as_type_mut(
             (self.offset + (index << self.wqe_shift)).try_into().unwrap()

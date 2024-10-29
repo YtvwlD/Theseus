@@ -17,6 +17,7 @@ fn send_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
     let mut completions = [ibv_wc::default(); QUEUE_SIZE];
     let mut pending_completions = 0;
     let mut failed_completions = 0;
+    println!("Sending {num_packets} packets...");
     for idx in 0..num_packets {
         let start = PACKET_SIZE * idx;
         let end = start + PACKET_SIZE;
@@ -34,11 +35,16 @@ fn send_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
             pending_completions -= 1;
         }
         // don't overflow the queue
+        if pending_completions >= QUEUE_SIZE {
+            println!("queue is full, giving up");
+            break;
+        }
         if pending_completions >= (QUEUE_SIZE * 3) / 4 {
-            sleep::sleep(Duration::from_millis(500)).unwrap();
+            sleep::sleep(Duration::from_secs(1)).unwrap();
         }
     }
-    while pending_completions > 0 {
+    let all_posted = Instant::now();
+    while pending_completions > 0 && (Instant::now() - all_posted).as_secs() < 30 {
         for completion in cq.poll(&mut completions)
             .expect("failed to poll for completions") {
             if !completion.is_valid() {
@@ -49,6 +55,7 @@ fn send_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
         }
     }
     println!("failed completions: {}", failed_completions);
+    println!("completions still pending: {}", pending_completions);
 }
 
 fn recv_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegion<u8>) {
@@ -57,6 +64,7 @@ fn recv_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
     let mut completions = [ibv_wc::default(); QUEUE_SIZE];
     let mut pending_completions = 0;
     let mut failed_completions = 0;
+    println!("Receiving {num_packets} packets...");
     for idx in 0..num_packets {
         let start = PACKET_SIZE * idx;
         let end = start + PACKET_SIZE;
@@ -74,11 +82,16 @@ fn recv_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
             pending_completions -= 1;
         }
         // don't overflow the queue
+        if pending_completions >= QUEUE_SIZE {
+            println!("queue is full, giving up");
+            break;
+        }
         if pending_completions >= (QUEUE_SIZE * 3) / 4 {
-            sleep::sleep(Duration::from_millis(500)).unwrap();
+            sleep::sleep(Duration::from_secs(1)).unwrap();
         }
     }
-    while pending_completions > 0 {
+    let all_posted = Instant::now();
+    while pending_completions > 0 && (Instant::now() - all_posted).as_secs() < 30 {
         for completion in cq.poll(&mut completions)
             .expect("failed to poll for completions") {
             if !completion.is_valid() {
@@ -89,6 +102,7 @@ fn recv_data(qp: &mut QueuePair, cq: &CompletionQueue, mr: &mut LocalMemoryRegio
         }
     }
     println!("failed completions: {}", failed_completions);
+    println!("completions still pending: {}", pending_completions);
 }
 
 
@@ -96,6 +110,20 @@ pub(super) fn run_test(pd: ProtectionDomain, cq: CompletionQueue, args: Vec<Stri
     assert_eq!(MEMORY_REGION_SIZE % PACKET_SIZE, 0);
     let mut mr = pd.allocate::<u8>(MEMORY_REGION_SIZE)
         .expect("failed to allocate info memory region");
+    println!("initializing {} MB...", MEMORY_REGION_SIZE / 1024 / 1024);
+    let is_sender = args.iter().find(|a| a == &"-s").is_some();
+    for i in 0..MEMORY_REGION_SIZE {
+        if is_sender {
+            // fill the memory region with data
+            mr[i] = 'x' as u8;
+        } else {
+            // zero the memory region
+            mr[i] = 0;
+        }
+    }
+    let crc = crc32(0, &mr[0..MEMORY_REGION_SIZE]);
+    println!("The initial checksum of the data is {crc:x}");
+
     let qp_type = match args.iter().find(|a| a == &"-r") {
         Some(_) => IBV_QPT_RC,
         None => IBV_QPT_UC,
@@ -113,21 +141,7 @@ pub(super) fn run_test(pd: ProtectionDomain, cq: CompletionQueue, args: Vec<Stri
     })
         .expect("handshake failed");
 
-    let is_sender = args.into_iter().find(|a| a == "-s").is_some();
-    
-    for i in 0..MEMORY_REGION_SIZE {
-        if is_sender {
-            // fill the memory region with data
-            mr[i] = i as u8;
-        } else {
-            // zero the memory region
-            mr[i] = 0;
-        }
-    }
-
-    let crc = crc32(0, &mr[0..MEMORY_REGION_SIZE]);
-    println!("The initial checksum of the data is {crc:x}");
-
+    println!("Transferring data...");
     let start = Instant::now();
     if is_sender {
         send_data(&mut qp, &cq, &mut mr);
@@ -136,6 +150,7 @@ pub(super) fn run_test(pd: ProtectionDomain, cq: CompletionQueue, args: Vec<Stri
     }
     
     let end = Instant::now();
+    println!("Transfer done.");
     let total_data_mib = MEMORY_REGION_SIZE as f64 / 1024.0 / 1024.0;
     let total_data_mb = MEMORY_REGION_SIZE as f64 / 1000.0 / 1000.0;
     let send_total_time = end - start;
@@ -143,6 +158,16 @@ pub(super) fn run_test(pd: ProtectionDomain, cq: CompletionQueue, args: Vec<Stri
     let send_avg_throughput_mb = total_data_mb / send_total_time.as_secs_f64();
     let send_avg_latency = send_total_time.as_millis() / (MEMORY_REGION_SIZE / PACKET_SIZE) as u128;
     let crc = crc32(0, &mr[0..MEMORY_REGION_SIZE]);
+
+
+    // check what part of the data we have
+    let mut count_data: usize = 0;
+    for i in 0..MEMORY_REGION_SIZE {
+        if mr[i] == 'x' as u8 {
+            count_data += 1;
+        }
+    }
+
     println!("Results:");
     println!("  Total time: {} s", send_total_time.as_secs_f32());
     println!("  Total data: {total_data_mib} MiB ({total_data_mb} MB)");
@@ -151,6 +176,7 @@ pub(super) fn run_test(pd: ProtectionDomain, cq: CompletionQueue, args: Vec<Stri
         send_avg_throughput_mib, send_avg_throughput_mb,
     );
     println!("   Average send latency: {send_avg_latency} us");
+    println!("   Percent of data: {}", count_data as f64 / MEMORY_REGION_SIZE as f64 * 100.0);
     println!("  CRC32: {crc:x}");
     0
 }

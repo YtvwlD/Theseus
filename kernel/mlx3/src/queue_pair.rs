@@ -545,7 +545,7 @@ impl QueuePair {
         let doorbell: &mut QueuePairDoorbell = self.doorbell_page
             .as_type_mut(0)?;
         doorbell.receive_wqe_index.write(
-            u16::try_from(self.rq.head).unwrap().into()
+            (self.rq.head as u16).into() // wrap around at u16::MAX
         );
         Ok(())
     }

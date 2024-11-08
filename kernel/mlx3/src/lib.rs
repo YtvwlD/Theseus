@@ -234,8 +234,7 @@ impl ConnectX3Nic {
         let qp = QueuePair::new(
             &mut cmd, self.capabilities.as_ref().unwrap(),
             self.offsets.as_mut().unwrap(), memory_regions, qp_type,
-            // TODO: somehow select the right port
-            &self.ports[0], send_cq, receive_cq, ib_caps,
+            send_cq, receive_cq, ib_caps,
         )?;
         let number = qp.number();
         self.qps.push(qp);

@@ -13,9 +13,14 @@ use strum_macros::FromRepr;
 use volatile::WriteOnly;
 use zerocopy::{AsBytes, FromBytes, U16, U32, U64};
 
-use crate::{cmd::Opcode, completion_queue::CompletionQueue, device::{uar_index_to_hw, PAGE_SHIFT}, fw::DoorbellPage, icm::{translate_to_physical, ICM_PAGE_SHIFT}, port::Port};
-
-use super::{cmd::CommandInterface, fw::Capabilities, icm::MrTable, Offsets};
+use super::{
+    cmd::{CommandInterface, Opcode},
+    completion_queue::CompletionQueue,
+    device::{uar_index_to_hw, PAGE_SHIFT},
+    fw::{Capabilities, DoorbellPage},
+    icm::{translate_to_physical, ICM_PAGE_SHIFT, MrTable},
+    Offsets,
+};
 
 const IB_SQ_MIN_WQE_SHIFT: u32 = 6;
 const IB_MAX_HEADROOM: u32 = 2048;
@@ -30,7 +35,7 @@ pub(super) struct QueuePair {
     number: u32,
     state: ibv_qp_state,
     qp_type: ibv_qp_type::Type,
-    port_number: u8,
+    port_number: Option<u8>,
     // TODO: this seems deprecated
     is_special: bool,
     sq: WorkQueue,
@@ -55,12 +60,11 @@ impl QueuePair {
     /// This is similar to creating a completion queue or an event queue.
     pub(super) fn new(
         cmd: &mut CommandInterface, caps: &Capabilities, offsets: &mut Offsets,
-        memory_regions: &mut MrTable, qp_type: ibv_qp_type::Type, port: &Port,
+        memory_regions: &mut MrTable, qp_type: ibv_qp_type::Type,
         send_cq: &CompletionQueue, receive_cq: &CompletionQueue,
         ib_caps: &mut ibv_qp_cap,
     ) -> Result<Self, &'static str> {
         let number = offsets.alloc_qpn().try_into().unwrap();
-        let port_number = port.number();
         let uar_idx = offsets.alloc_scq_db();
         let state = ibv_qp_state::IBV_QPS_RESET;
         let send_cq_number = send_cq.number();
@@ -94,7 +98,7 @@ impl QueuePair {
             .as_type_mut(0)?;
         doorbell.receive_wqe_index.write(0.into());
         let qp = Self {
-            number, state, qp_type, port_number, is_special, sq, rq,
+            number, state, qp_type, port_number: None, is_special, sq, rq,
             send_cq_number, receive_cq_number, memory: Some(memory), uar_idx,
             doorbell_page, doorbell_address, mtt,
         };
@@ -135,6 +139,14 @@ impl QueuePair {
         ), attr.qp_state) {
             // initialize
             (ibv_qp_state::IBV_QPS_RESET, true, ibv_qp_state::IBV_QPS_INIT) => {
+                // save the port number for later on
+                // In earlier versions of the API, the port number was required
+                // to be set as part of this transition. This is no longer the
+                // case as it moved into INIT2RTR, but applications may set it
+                // here, so save it for later.
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PORT) {
+                    self.port_number = Some(attr.port_num);
+                }
                 // set required fields
                 context.set_service_type(match self.qp_type {
                     ibv_qp_type::IBV_QPT_RC => 0x0,
@@ -244,6 +256,10 @@ impl QueuePair {
 
             // init -> rtr
             (ibv_qp_state::IBV_QPS_INIT, true, ibv_qp_state::IBV_QPS_RTR) => {
+                // we need the port number for this transition
+                if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PORT) {
+                    self.port_number = Some(attr.port_num);
+                }
                 // set required fields
                 // TODO: this might have been set in an earlier call
                 if attr_mask.contains(ibv_qp_attr_mask::IBV_QP_PATH_MTU) {
@@ -274,7 +290,7 @@ impl QueuePair {
                 context.set_primary_mlid(0); // might be slid
                 context.set_primary_sched_queue(
                     DEFAULT_SCHED_QUEUE
-                        | ((self.port_number - 1) << 6)
+                        | ((self.port_number.ok_or("port number not set")? - 1) << 6)
                         | ((attr.ah_attr.sl & 0xf) << 2)
                 );
                 // TODO: mgid_index, ud_force_mgid, max_stat_rate, hop_limit,

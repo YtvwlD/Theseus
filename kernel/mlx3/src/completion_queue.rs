@@ -192,14 +192,16 @@ impl CompletionQueue {
             // Make sure we read CQ entry contents after we've checked the
             // ownership bit.
             compiler_fence(Ordering::SeqCst);
-            let qp = qps.iter_mut()
-                .find(|qp| qp.number() == cqe.qp_number())
-                .ok_or("invalid queue pair number")?;
             wc.qp_num = cqe.qp_number();
-            if cqe.is_send() {
-                qp.advance_send_queue();
+            if let Some(qp) = qps.iter_mut()
+                .find(|qp| qp.number() == cqe.qp_number()) {
+                if cqe.is_send() {
+                    qp.advance_send_queue();
+                } else {
+                    qp.advance_receive_queue();
+                }
             } else {
-                qp.advance_receive_queue();
+                warn!("completion has invalid queue pair number {}", cqe.qp_number());
             }
             if cqe.opcode() == CQE_OPCODE_ERROR {
                 let checksum_bytes = cqe.checksum().to_be_bytes();

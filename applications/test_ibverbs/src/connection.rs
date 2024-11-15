@@ -6,7 +6,7 @@ use time::Instant;
 
 use crate::{crc32, read_int};
 
-const MEMORY_REGION_SIZE: usize = 64 * 1024 * 1024;
+const MEMORY_REGION_SIZE: usize = 7 * 1024 * 1024;
 // this can be larger than the MTU
 const PACKET_SIZE: usize = 4096;
 const QUEUE_SIZE: usize = 100;

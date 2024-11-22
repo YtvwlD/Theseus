@@ -60,7 +60,7 @@ pub struct ibv_cq<'ctx> {
     context: &'ctx ibv_context,
     number: u32,
     /// Consumer-supplied context returned for completion events
-    cq_context: isize,
+    _cq_context: isize,
 }
 
 impl Drop for ibv_cq<'_> {
@@ -136,7 +136,7 @@ pub fn ibv_get_device_list() -> Result<Vec<ibv_device>> {
 }
 
 /// Return kernel device name
-pub fn ibv_get_device_name(device: &ibv_device) -> Option<String> {
+pub fn ibv_get_device_name(_device: &ibv_device) -> Option<String> {
     // TODO: don't hardcode this
     Some("mlx3_0".to_string())
 }
@@ -146,12 +146,12 @@ pub fn ibv_get_device_name(device: &ibv_device) -> Option<String> {
 /// Available for the kernel with support of IB device query
 /// over netlink interface. For the unsupported kernels, the
 /// relevant error will be returned.
-pub fn ibv_get_device_index(device: &ibv_device) -> Result<i32> {
+pub fn ibv_get_device_index(_device: &ibv_device) -> Result<i32> {
     Err(Error::from(ErrorKind::InvalidData))
 }
 
 /// Return device's node GUID
-pub fn ibv_get_device_guid(device: &ibv_device) -> Result<__be64> {
+pub fn ibv_get_device_guid(_device: &ibv_device) -> Result<__be64> {
     todo!()
 }
 
@@ -181,7 +181,7 @@ pub fn ibv_query_port(
 
 /// Get a GID table entry
 pub fn ibv_query_gid(
-    context: &ibv_context, port_num: u8, index: i32,
+    _context: &ibv_context, _port_num: u8, _index: i32,
 ) -> Result<ibv_gid> {
     // TODO: figure out how to actually do this as the Nautilus driver can't
     Ok(ibv_gid { raw: [0; 16] })
@@ -227,7 +227,7 @@ pub fn ibv_create_cq(
         .lock()
         .create_cq(cqe)
         .map_err(|s| Error::new(ErrorKind::Other, s))?;
-    Ok(ibv_cq { context, number, cq_context, })
+    Ok(ibv_cq { context, number, _cq_context: cq_context, })
 }
 
 /// Create a queue pair.

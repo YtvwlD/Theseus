@@ -27,11 +27,11 @@ use super::{
 pub(super) struct CompletionQueue {
     number: u32,
     num_entries: u32,
-    num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
     uar_idx: usize,
     doorbell_page: MappedPages,
-    mtt: u64,
+    // TODO: somehow free this on Drop
+    _mtt: u64,
     arm_sequence_number: u32,
     consumer_index: u32,
     // TODO: bind the lifetime to the one of the event queue
@@ -83,8 +83,8 @@ impl CompletionQueue {
         )?;
 
         let cq = Self {
-            number, num_entries, num_pages, memory: Some(memory), uar_idx,
-            doorbell_page, mtt, arm_sequence_number, consumer_index, eq_number,
+            number, num_entries, memory: Some(memory), uar_idx, doorbell_page,
+            _mtt: mtt, arm_sequence_number, consumer_index, eq_number,
         };
         trace!("created new CQ: {:?}", cq);
         Ok(cq)
@@ -179,11 +179,12 @@ impl CompletionQueue {
     /// Poll this completion queue for one work completion.
     /// 
     /// Return true if there are more.
+    #[allow(unreachable_patterns)]
     fn poll_one(
         &mut self, qps: &mut [QueuePair], wc: &mut ibv_wc,
     ) -> Result<bool, &'static str> {
         const CQE_OPCODE_ERROR: u8 = 0x1e;
-        const CQE_OPCODE_RESIZE: u8 = 0x16;
+        const _CQE_OPCODE_RESIZE: u8 = 0x16;
         // clear the wc first
         *wc = ibv_wc::default();
         if let Some(cqe) = self.get_next_cqe_sw()? {
@@ -314,7 +315,6 @@ impl CompletionQueue {
 
     /// Get the next element.
     fn get_next_cqe_sw(&mut self) -> Result<Option<CompletionQueueEntry>, &'static str> {
-        const CQE_OWNER_MASK: u8 = 0x80;
         let index = self.consumer_index;
         // get the cqe
         let cqe_bytes: &[u8] = self.memory.as_mut().unwrap().0.as_slice(
@@ -352,33 +352,34 @@ impl Drop for CompletionQueue {
 
 #[bitfield]
 #[derive(Debug)]
+#[allow(dead_code)]
 struct CompletionQueueContext {
-    flags: u32,
+    #[skip] flags: u32,
     #[skip] __: B48,
-    page_offset: u16,
+    #[skip] page_offset: u16,
     #[skip] __: B3,
-    log_size: B5,
-    usr_page: B24,
-    cq_period: u16,
-    cq_max_count: u16,
+    #[skip(getters)] log_size: B5,
+    #[skip(getters)] usr_page: B24,
+    #[skip] cq_period: u16,
+    #[skip] cq_max_count: u16,
     #[skip] __: B24,
-    comp_eqn: u8,
+    #[skip(getters)] comp_eqn: u8,
     #[skip] __: B2,
-    log_page_size: B6,
+    #[skip(getters)] log_page_size: B6,
     #[skip] __: u16,
     // the last three bits must be zero
-    mtt_base_addr: B40,
+    #[skip(getters)] mtt_base_addr: B40,
     #[skip] __: u8,
-    last_notified_index: B24,
+    #[skip] last_notified_index: B24,
     #[skip] __: u8,
-    solicit_producer_index: B24,
+    #[skip] solicit_producer_index: B24,
     #[skip] __: u8,
-    consumer_index: B24,
+    #[skip] consumer_index: B24,
     #[skip] __: u8,
-    producer_index: B24,
+    #[skip] producer_index: B24,
     #[skip] __: u64,
     // the last three bits must be zero
-    doorbell_record_addr: u64,
+    #[skip(getters)] doorbell_record_addr: u64,
 }
 
 #[derive(FromBytes)]
@@ -399,7 +400,7 @@ struct CompletionQueueEntry {
     mlpath: B7,
     rqpn: B24,
     sl: B4,
-    vid: B12,
+    #[skip] vid: B12,
     slid: u16,
     #[skip] __: u32,
     byte_cnt: u32,

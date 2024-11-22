@@ -152,11 +152,6 @@ impl Port {
             link_layer: 0, // TODO
         })
     }
-
-    /// Get the number of this port.
-    pub(super) fn number(&self) -> u8 {
-        self.number
-    }
 }
 
 impl Drop for Port {
@@ -170,49 +165,49 @@ impl Drop for Port {
 #[bitfield]
 struct SetPortCommand {
     #[skip] __: B9,
-    change_port_mtu: bool,
-    change_port_vl: bool,
-    change_port_pkey: bool,
+    #[skip(getters)] change_port_mtu: bool,
+    #[skip(getters)] change_port_vl: bool,
+    #[skip(getters)] change_port_pkey: bool,
     #[skip] __: B4,
-    mtu_cap: B4,
+    #[skip(getters)] mtu_cap: B4,
     #[skip] __: B4,
-    vl_cap: B4,
+    #[skip(getters)] vl_cap: B4,
     #[skip] __: B4,
-    capabilities: u32,
+    #[skip(getters)] capabilities: u32,
     #[skip] __: u64,
     #[skip] __: u64,
     #[skip] __: u64,
     #[skip] __: u32,
     #[skip] __: u32,
-    max_pkey: u16,
+    #[skip(getters)] max_pkey: u16,
     // ...
 }
 
 #[bitfield]
 struct PortCapabilities {
-    link_up: bool,
+    #[skip(setters)] link_up: bool,
     // dmfs_optimized_state
     #[skip] __: B2,
-    default_sense: bool,
-    default_type: bool,
+    #[skip] default_sense: bool,
+    #[skip] default_type: bool,
     #[skip] __: bool,
-    eth: bool,
-    ib: bool,
+    #[skip(setters)] eth: bool,
+    #[skip(setters)] ib: bool,
     #[skip] __: B4,
-    ib_mtu: B4,
-    eth_mtu: u16,
-    ib_link_speed: u8,
-    eth_link_speed: u8,
-    ib_port_width: u8,
-    log_max_gids: B4,
-    log_max_pkeys: B4,
+    #[skip(setters)] ib_mtu: B4,
+    #[skip(setters)] eth_mtu: u16,
+    #[skip] ib_link_speed: u8,
+    #[skip] eth_link_speed: u8,
+    #[skip] ib_port_width: u8,
+    #[skip] log_max_gids: B4,
+    #[skip] log_max_pkeys: B4,
     #[skip] __: u16,
-    log_max_vlan: B4,
-    log_max_mac: B4,
-    max_tc_eth: B4,
-    max_vl_ib: B4,
+    #[skip] log_max_vlan: B4,
+    #[skip] log_max_mac: B4,
+    #[skip] max_tc_eth: B4,
+    #[skip] max_vl_ib: B4,
     #[skip] __: B48,
-    mac: B48,
+    #[skip(setters)] mac: B48,
     // ...
 }
 
@@ -267,30 +262,30 @@ impl fmt::Debug for MadPacket {
 #[bitfield]
 struct MadPacketData {
     #[skip] __: u128,
-    lid: u16,
-    sm_lid: u16,
-    port_cap_flags: u32,
+    #[skip(setters)] lid: u16,
+    #[skip(setters)] sm_lid: u16,
+    #[skip(setters)] port_cap_flags: u32,
     #[skip] __: B60,
-    active_width: B4,
+    #[skip] active_width: B4,
     #[skip] __: B4,
-    state: B4,
-    phys_state: B4,
+    #[skip(setters)] state: B4,
+    #[skip(setters)] phys_state: B4,
     #[skip] __: B9,
-    lmc: B3,
-    active_speed: B4,
+    #[skip(setters)] lmc: B3,
+    #[skip] active_speed: B4,
     #[skip] __: B4,
-    active_mtu: B4,
+    #[skip(setters)] active_mtu: B4,
     #[skip] __: B4,
-    max_vl_num: B4,
+    #[skip] max_vl_num: B4,
     #[skip] __: B28,
-    init_type_reply: B4,
-    max_mtu: B4,
+    #[skip] init_type_reply: B4,
+    #[skip(setters)] max_mtu: B4,
     #[skip] __: u32,
-    bad_pkey_cntr: u16,
-    qkey_viol_cnt: u16,
+    #[skip] bad_pkey_cntr: u16,
+    #[skip] qkey_viol_cnt: u16,
     #[skip] __: B11,
-    subnet_timeout: B5,
+    #[skip] subnet_timeout: B5,
     #[skip] __: B84,
-    ext_active_speed: B4,
+    #[skip] ext_active_speed: B4,
     #[skip] __: u8,
 }

@@ -19,6 +19,7 @@ const POLL_TOKEN: u32 = 0xffff;
 
 #[repr(u16)]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(super) enum Opcode {
     // initialization and general commands
     QueryDevCap = 0x03,
@@ -102,6 +103,7 @@ impl OpcodeModifier for () {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[allow(dead_code)]
 /// Modifiers for MadDemux
 pub(super) enum MadDemuxOpcodeModifier {
     Configure = 0,
@@ -131,6 +133,7 @@ impl OpcodeModifier for MadIfcOpcodeModifier {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(super) enum SetPortOpcodeModifier {
     IB = 0x0,
     ETH = 0x1,

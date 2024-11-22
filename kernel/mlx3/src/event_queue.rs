@@ -46,14 +46,14 @@ pub(super) fn init_eqs(
 pub(super) struct EventQueue {
     number: usize,
     num_entries: u32,
-    num_pages: usize,
     memory: Option<(MappedPages, PhysicalAddress)>,
-    mtt: u64,
+    // TODO: somehow free this on Drop
+    _mtt: u64,
     consumer_index: u32,
     /// IRQ number on bus
-    intr_vector: Option<u8>,
+    _intr_vector: Option<u8>,
     /// IRQ we will see
-    base_vector: Option<u8>,
+    _base_vector: Option<u8>,
     /// event bitmask
     async_ev_mask: AsyncEventMask,
 }
@@ -108,8 +108,8 @@ impl EventQueue {
 
         let async_ev_mask = AsyncEventMask::empty();
         let eq = Self {
-            number, num_entries, num_pages, memory: Some(memory), mtt,
-            consumer_index, intr_vector, base_vector, async_ev_mask,
+            number, num_entries, memory: Some(memory), _mtt: mtt, consumer_index,
+            _intr_vector: intr_vector, _base_vector: base_vector, async_ev_mask,
         };
         trace!("created new EQ: {:?}", eq);
         Ok(eq)
@@ -260,27 +260,27 @@ impl Drop for EventQueue {
 
 #[bitfield]
 struct EventQueueContext {
-    status: B4,
+    #[skip(getters)] status: B4,
     #[skip] __: B16,
-    state: B4,
+    #[skip(getters)] state: B4,
     #[skip] __: B60,
-    page_offset: B7,
+    #[skip] page_offset: B7,
     #[skip] __: u8,
-    log_eq_size: B5,
+    #[skip(getters)] log_eq_size: B5,
     #[skip] __: B24,
-    eq_period: u16,
-    eq_max_count: u16,
+    #[skip] eq_period: u16,
+    #[skip] eq_max_count: u16,
     #[skip] __: B22,
-    intr: B10,
+    #[skip(getters)] intr: B10,
     #[skip] __: B2,
-    log_page_size: B6,
+    #[skip(getters)] log_page_size: B6,
     #[skip] __: u16,
     // the last three bits must be zero
-    mtt_base_addr: B40,
+    #[skip(getters)] mtt_base_addr: B40,
     #[skip] __: B72,
-    consumer_index: B24,
+    #[skip] consumer_index: B24,
     #[skip] __: u8,
-    producer_index: B24,
+    #[skip] producer_index: B24,
     #[skip] __: B96,
 }
 
@@ -289,9 +289,9 @@ struct EventQueueEntry {
     #[skip] __: u8,
     event_type: u8,
     #[skip] __: u8,
-    event_subtype: u8,
-    event_data1: B96,
-    event_data2: B96,
+    #[skip] event_subtype: u8,
+    #[skip] event_data1: B96,
+    #[skip] event_data2: B96,
     #[skip] __: B24,
     owner: bool,
     #[skip] __: B7,

@@ -379,7 +379,9 @@ struct Offsets {
     next_dmpt: usize,
     next_eqn: usize,
     next_sqc_doorbell_index: usize,
-    next_eq_doorbell_index: usize,
+    // TODO: EventQueue does not seem to need this.
+    // Should it use this to be more similar to QueuePair?
+    _next_eq_doorbell_index: usize,
 }
 
 impl Offsets {
@@ -396,7 +398,7 @@ impl Offsets {
             // Each UAR has 4 EQ doorbells; so if a UAR is reserved,
             // then we can't use any EQs whose doorbell falls on that page,
             // even if the EQ itself isn't reserved.
-            next_eq_doorbell_index: caps.num_rsvd_eqs() as usize / 4,
+            _next_eq_doorbell_index: caps.num_rsvd_eqs() as usize / 4,
         }
     }
     

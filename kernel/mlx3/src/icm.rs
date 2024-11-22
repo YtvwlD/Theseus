@@ -124,8 +124,8 @@ impl MappedIcmAuxiliaryArea {
                 profile.init_hca.num_qps(), 1 << caps.log2_rsvd_qps(),
                 profile.init_hca.qpc_rdmarc_base(),
             )?,
-            rdmarc_base: profile.init_hca.qpc_rdmarc_base(),
-            rdmarc_shift: profile.rdmarc_shift,
+            _rdmarc_base: profile.init_hca.qpc_rdmarc_base(),
+            _rdmarc_shift: profile.rdmarc_shift,
         };
         let cq_table = CqTable {
             table: self.init_icm_table(
@@ -190,7 +190,8 @@ impl MappedIcmAuxiliaryArea {
             idx += 1;
         }
         Ok(IcmTable {
-            virt, obj_num, obj_size, icm_num, icm,
+            _virt: virt, _obj_num: obj_num, _obj_size: obj_size,
+            _icm_num: icm_num, icm,
         })
     }
     
@@ -204,12 +205,13 @@ impl Drop for MappedIcmAuxiliaryArea {
     }
 }
 
+// TODO: do we need those fields?
 struct IcmTable {
-    virt: u64,
-    obj_num: usize,
-    obj_size: u16,
+    _virt: u64,
+    _obj_num: usize,
+    _obj_size: u16,
     /// the available number of Icms
-    icm_num: usize,
+    _icm_num: usize,
     /// must contain less than icm_num entries
     icm: Vec<MappedIcm>,
 }
@@ -234,8 +236,9 @@ struct QpTable {
     auxc_table: IcmTable,
     altc_table: IcmTable,
     rdmarc_table: IcmTable,
-    rdmarc_base: u64,
-    rdmarc_shift: u8,
+    // TODO: these two do not seem to be used?
+    _rdmarc_base: u64,
+    _rdmarc_shift: u8,
 }
 
 struct EqTable {
@@ -451,42 +454,42 @@ impl Drop for MemoryRegion {
 // TODO: keep actual references, so that data, eq and qp live long enough
 #[bitfield]
 struct DmptEntry {
-    status: B4,
+    #[skip] status: B4,
     #[skip] __: B10,
-    mio: bool,
+    #[skip(getters)] mio: bool,
     #[skip] __: B3,
-    remote_write: bool,
-    remote_read: bool,
-    local_write: bool,
-    local_read: bool,
+    #[skip(getters)] remote_write: bool,
+    #[skip(getters)] remote_read: bool,
+    #[skip(getters)] local_write: bool,
+    #[skip(getters)] local_read: bool,
     #[skip] __: bool,
-    region: bool,
+    #[skip(getters)] region: bool,
     #[skip] __: u8,
-    qp_number: B24,
-    bound_to_qp: bool,
+    #[skip(getters)] qp_number: B24,
+    #[skip(getters)] bound_to_qp: bool,
     #[skip] __: B7,
     /// This index is the key, but formatted as `key[7:0],key[31:8]`,
     /// so we have to provide our own getter and setter implementation.
     index: u32,
     #[skip] __: B3,
-    rae: bool,
+    #[skip(getters)] rae: bool,
     #[skip] __: B4,
-    pd: B24,
-    start: u64,
+    #[skip] pd: B24,
+    #[skip(getters)] start: u64,
     length: u64,
-    lkey: u32,
+    #[skip] lkey: u32,
     #[skip] __: u8,
-    win_cnt: B24,
+    #[skip] win_cnt: B24,
     #[skip] __: B28,
-    mtt_rep: B4,
+    #[skip] mtt_rep: B4,
     #[skip] __: B24,
     // the last three bits must be zero
-    mtt_addr: B40,
-    mtt_size: u32,
+    #[skip(getters)] mtt_addr: B40,
+    #[skip(getters)] mtt_size: u32,
     #[skip] __: B11,
-    entity_size: B21,
+    #[skip(getters)] entity_size: B21,
     #[skip] __: B11,
-    first_byte_offset: B21,
+    #[skip] first_byte_offset: B21,
     #[skip] __: u128,
     #[skip] __: u128,
     #[skip] __: u128,

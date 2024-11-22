@@ -39,6 +39,7 @@ const MAX_NUM_EQS: u64 = 1 << 9;
 
 #[repr(usize)]
 #[derive(EnumCount)]
+#[allow(dead_code)]
 enum CmptType {
     QP, SRQ, CQ, EQ,
 }
@@ -50,7 +51,8 @@ pub(super) struct Profile {
     pub(super) num_mgms: usize,
     pub(super) num_amgms: usize,
     pub(super) num_mtts: usize,
-    max_qp_dest_rdma: usize,
+    // TODO: do we need this?
+    _max_qp_dest_rdma: usize,
     // the C driver doesn't have this here
     pub(super) rdmarc_shift: u8,
     // the rest of the parameters
@@ -67,8 +69,6 @@ impl Profile {
         let mut num_amgms = 0;
         let mut num_mtts = 0;
         let mut max_qp_dest_rdma = 0;
-        // the C driver doesn't have this here
-        let mut rdmarc_shift = 0;
         let mut init_hca = InitHcaParameters::new();
         let mut total_size = 0;
         let log_mtt_per_seg = 3;
@@ -129,7 +129,8 @@ impl Profile {
                 );
             }
         }
-        rdmarc_shift = 0;
+        // the C driver doesn't have this here
+        let mut rdmarc_shift = 0;
         for profile in profiles.iter() {
             match profile.typ {
                 ResourceType::CMPT => init_hca.set_tpt_cmpt_base(profile.start),
@@ -183,8 +184,9 @@ impl Profile {
         trace!("ICM memory reserving {} GB", total_size >> 30);
         trace!("HCA Pages Required: {}", total_size >> 12);
         Ok(Self {
-            num_mpts, num_mgms, num_amgms, num_mtts, max_qp_dest_rdma,
-            rdmarc_shift, init_hca, total_size,
+            num_mpts, num_mgms, num_amgms, num_mtts,
+            _max_qp_dest_rdma: max_qp_dest_rdma, rdmarc_shift, init_hca,
+            total_size,
         })
     }
 }
